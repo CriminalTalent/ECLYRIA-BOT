@@ -1,8 +1,13 @@
 # bot/main.rb
 require 'dotenv/load'
+require_relative 'mastodon_client'
+require_relative 'command_parser'
 
-puts "ECLYRIA봇 기동 완료!"
+puts " ECLYRIA봇 기동 완료!"
+
 loop do
-  puts " 명령어 감시 중..."
-  sleep 10
+  MastodonClient.listen_mentions do |mention|
+    CommandParser.handle(mention)
+  end
+  sleep 15
 end
