@@ -71,16 +71,14 @@ module CommandParser
         keyword = row['인식 키워드']&.strip
         next unless keyword && text.include?(keyword.gsub(/[\[\]]/, ''))
         
-        # 응답 텍스트 조합
-        response_part1 = row['출석 응답 내용']&.strip || ''
-        response_part2 = row['답변 출력']&.strip || ''
+        # 응답 텍스트
+        response_text = row['답변 출력']&.strip || ''
+        next if response_text.empty?
         
-        combined_response = [response_part1, response_part2]
-                          .reject(&:empty?)
-                          .join(' ')
-                          .gsub(/\{name\}/, display_name)
+        # 이름 치환
+        response_text = response_text.gsub(/\{name\}/, display_name)
         
-        responses << combined_response unless combined_response.empty?
+        responses << response_text
       end
       
       responses.sample
@@ -132,8 +130,7 @@ module CommandParser
           'username' => row['유저명']&.strip || id,
           'galleons' => row['갈레온']&.to_i || 20,
           'items' => parse_items(row['소지품']),
-          'notes' => row['비고']&.strip || '',
-          'last_attendance' => nil
+          'notes' => row['비고']&.strip || ''
         }
       end
     rescue => e
@@ -226,15 +223,12 @@ module CommandParser
       return
     end
 
-    }
-
     # 신규 유저 등록
     users_data[acct] = {
       'username' => new_name,
       'galleons' => 20,  
-      'items' => welcome_items,
-      'notes' => "#{Date.today} 입학",
-      'last_attendance' => nil
+      'items' => {},
+      'notes' => "#{Date.today} 입학"
     }
     
     save_users_data(users_data)
@@ -408,7 +402,6 @@ module CommandParser
     effect = item['effect'].empty? ? item['description'] : item['effect']
     
     use_messages = [
-
       "'#{item_name}' 사용 했습니다! #{effect}",
     ]
     
