@@ -162,7 +162,7 @@ module CommandParser
     end
   end
 
-  # 아이템 문자열 파싱 (예: "체력포션x2,철검x1")
+  # 아이템 문자열 파싱
   def self.parse_items(items_string)
     return {} unless items_string && !items_string.strip.empty?
     
