@@ -16,7 +16,7 @@ module CommandParser
     acct = mention.account.acct
     display_name = mention.account.display_name || acct
     
-    puts "💬 처리 중인 멘션: #{text}"
+    puts "처리 중인 멘션: #{text}"
     
     # CSV 파일에서 응답 찾기 (우선 처리)
     if File.exist?(RESPONSES_CSV)
@@ -29,6 +29,8 @@ module CommandParser
     
     # 게임 명령어 처리
     case text
+    when /^\[입학\/(.+)\]$/i
+      handle_enrollment(mention, acct, display_name, $1)
     when /^\[구매\/(.+)\]$/i
       handle_purchase(mention, acct, display_name, $1)
     when /^\[양도\/(.+)\/@(.+)\]$/i
@@ -41,8 +43,6 @@ module CommandParser
       handle_use_item(mention, acct, display_name, $1)
     when /^\[상점\]$/i
       handle_shop(mention, acct, display_name)
-    when /\[출석\]/i, /출석/i
-      handle_attendance(mention, acct, display_name)
     when /안녕/i, /hello/i, /hi/i
       handle_greeting(mention, acct, display_name)
     when /도움말/i, /help/i
@@ -130,7 +130,7 @@ module CommandParser
         
         users[id] = {
           'username' => row['유저명']&.strip || id,
-          'galleons' => row['갈레온']&.to_i || 100,
+          'galleons' => row['갈레온']&.to_i || 20,
           'items' => parse_items(row['소지품']),
           'notes' => row['비고']&.strip || '',
           'last_attendance' => nil
@@ -187,46 +187,89 @@ module CommandParser
     items_hash.map { |name, count| "#{name}x#{count}" }.join(',')
   end
 
-  # 사용자 데이터 가져오기/생성
+  # 사용자 데이터 가져오기 (등록된 사용자만)
   def self.get_user(acct)
     users_data = load_users_data
     
     unless users_data[acct]
-      users_data[acct] = {
-        'username' => acct,
-        'galleons' => 100,
-        'items' => {},
-        'notes' => '신규 가입자',
-        'last_attendance' => nil
-      }
-      save_users_data(users_data)
+      return [nil, nil]  # 미등록 사용자
     end
     
     [users_data, users_data[acct]]
   end
 
+  # 미등록 사용자 체크
+  def self.check_user_registration(mention, acct, display_name)
+    users_data, user_info = get_user(acct)
+    
+    if user_info.nil?
+      unregistered_messages = [
+        "#{display_name}학생을 찾을 수 없습니다.\n✨ [입학/이름]으로 학적부에 이름을 새겨주세요.",
+      ]
+      
+      MastodonClient.reply(mention, unregistered_messages.sample)
+      return false
+    end
+    
+    true
+  end
+
+  # 신규 유저 입학 처리
+  def self.handle_enrollment(mention, acct, display_name, new_name)
+    new_name = new_name.strip
+    users_data = load_users_data
+    
+    # 이미 등록된 사용자인지 확인
+    if users_data[acct]
+      current_name = users_data[acct]['username']
+      MastodonClient.reply(mention, "#{display_name}님은 이미 '#{current_name}' 이름으로 등록되어 있습니다.")
+      return
+    end
+
+    }
+
+    # 신규 유저 등록
+    users_data[acct] = {
+      'username' => new_name,
+      'galleons' => 20,  
+      'items' => welcome_items,
+      'notes' => "#{Date.today} 입학",
+      'last_attendance' => nil
+    }
+    
+    save_users_data(users_data)
+
+    welcome_messages = [
+      "#{new_name}학생 호그와트 입학생임을 확인했습니다\n 열차에 탑승해주세요."
+    ]
+    
+    MastodonClient.reply(mention, welcome_messages.sample)
+  end
+
   # 구매 처리
   def self.handle_purchase(mention, acct, display_name, item_name)
+    return unless check_user_registration(mention, acct, display_name)
+    
     item_name = item_name.strip
     items_data = load_items_data
     users_data, user_info = get_user(acct)
 
     unless items_data[item_name]
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 존재하지 않는 아이템입니다!")
+      MastodonClient.reply(mention, "❌ '#{item_name}'은(는)이 뭐야? 난 그런거 취급안해요!")
       return
     end
 
     item = items_data[item_name]
     
     unless item['purchasable']
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 구매할 수 없는 아이템입니다!")
+      MastodonClient.reply(mention, "'#{item_name}'이건 안팔아요~")
       return
     end
 
     price = item['price']
     
     if user_info['galleons'] < price
-      MastodonClient.reply(mention, "💸 갈레온이 부족합니다! 필요: #{price}G, 보유: #{user_info['galleons']}G")
+      MastodonClient.reply(mention, "학생! 갈레온이 없잖아? 필요: #{price}G, 보유: #{user_info['galleons']}G")
       return
     end
 
@@ -235,11 +278,13 @@ module CommandParser
     user_info['items'][item_name] = (user_info['items'][item_name] || 0) + 1
     save_users_data(users_data)
 
-    MastodonClient.reply(mention, "✅ #{display_name}님이 '#{item_name}'을(를) #{price}G에 구매했습니다!\n#{item['description']}\n💰 잔여 갈레온: #{user_info['galleons']}G")
+    MastodonClient.reply(mention, "#{display_name}님이 '#{item_name}'을(를) #{price}G에 사갔다네! 고마워~\n#{item['description']}\n💰 잔여 갈레온: #{user_info['galleons']}G")
   end
 
   # 아이템 양도 처리
   def self.handle_transfer_item(mention, acct, display_name, item_name, target_acct)
+    return unless check_user_registration(mention, acct, display_name)
+    
     item_name = item_name.strip
     target_acct = target_acct.strip.gsub('@', '')
     
@@ -247,29 +292,24 @@ module CommandParser
     users_data, sender = get_user(acct)
     
     unless items_data[item_name]
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 존재하지 않는 아이템입니다!")
+      MastodonClient.reply(mention, "'#{item_name}'은(는) 존재하지 않는 아이템입니다!")
       return
     end
 
     unless items_data[item_name]['transferable']
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 양도할 수 없는 아이템입니다!")
+      MastodonClient.reply(mention, "'#{item_name}'은(는) 양도할 수 없는 아이템입니다!")
       return
     end
     
     unless sender['items'][item_name] && sender['items'][item_name] > 0
-      MastodonClient.reply(mention, "❌ '#{item_name}'을(를) 보유하고 있지 않습니다!")
+      MastodonClient.reply(mention, "'#{item_name}'을(를) 보유하고 있지 않습니다!")
       return
     end
 
-    # 받는 사람 데이터 로드/생성
+    # 받는 사람이 등록된 사용자인지 확인
     unless users_data[target_acct]
-      users_data[target_acct] = {
-        'username' => target_acct,
-        'galleons' => 100,
-        'items' => {},
-        'notes' => '양도를 통해 가입',
-        'last_attendance' => nil
-      }
+      MastodonClient.reply(mention, "@#{target_acct}님은 호그와트 학적부에서 확인되지 않습니다.")
+      return
     end
     receiver = users_data[target_acct]
 
@@ -280,29 +320,26 @@ module CommandParser
     
     save_users_data(users_data)
 
-    MastodonClient.reply(mention, "🎁 #{display_name}님이 @#{target_acct}님에게 '#{item_name}'을(를) 양도했습니다!\n#{items_data[item_name]['description']}")
+    MastodonClient.reply(mention, "#{display_name}님이 @#{target_acct}님에게 '#{item_name}'을(를) 양도했습니다!\n#{items_data[item_name]['description']}")
   end
 
   # 갈레온 양도 처리
   def self.handle_transfer_galleon(mention, acct, display_name, amount, target_acct)
+    return unless check_user_registration(mention, acct, display_name)
+    
     target_acct = target_acct.strip.gsub('@', '')
     
     users_data, sender = get_user(acct)
     
     if sender['galleons'] < amount
-      MastodonClient.reply(mention, "💸 갈레온이 부족합니다! 보유: #{sender['galleons']}G")
+      MastodonClient.reply(mention, "갈레온이 부족합니다! 보유: #{sender['galleons']}G")
       return
     end
 
-    # 받는 사람 데이터 로드/생성
+    # 받는 사람이 등록된 사용자인지 확인
     unless users_data[target_acct]
-      users_data[target_acct] = {
-        'username' => target_acct,
-        'galleons' => 100,
-        'items' => {},
-        'notes' => '송금을 통해 가입',
-        'last_attendance' => nil
-      }
+      MastodonClient.reply(mention, "@#{target_acct}님은 호그와트 학적부에서 확인되지 않습니다.")
+      return
     end
     receiver = users_data[target_acct]
 
@@ -312,16 +349,18 @@ module CommandParser
     
     save_users_data(users_data)
 
-    MastodonClient.reply(mention, "💰 #{display_name}님이 @#{target_acct}님에게 #{amount}G를 양도했습니다!\n잔여 갈레온: #{sender['galleons']}G")
+    MastodonClient.reply(mention, "#{display_name}님이 @#{target_acct}님에게 #{amount}G를 양도했습니다!\n잔여 갈레온: #{sender['galleons']}G")
   end
 
   # 인벤토리 확인
   def self.handle_inventory(mention, acct, display_name)
+    return unless check_user_registration(mention, acct, display_name)
+    
     users_data, user_info = get_user(acct)
     
-    inventory_text = "🎒 #{display_name}님의 주머니\n"
-    inventory_text += "💰 갈레온: #{user_info['galleons']}G\n\n"
-    inventory_text += "📦 소지품:\n"
+    inventory_text = "#{display_name}님의 주머니\n"
+    inventory_text += "갈레온: #{user_info['galleons']}G\n\n"
+    inventory_text += "소지품:\n"
     
     if user_info['items'].empty?
       inventory_text += "   (비어있음)"
@@ -336,23 +375,25 @@ module CommandParser
 
   # 아이템 사용
   def self.handle_use_item(mention, acct, display_name, item_name)
+    return unless check_user_registration(mention, acct, display_name)
+    
     item_name = item_name.strip
     items_data = load_items_data
     users_data, user_info = get_user(acct)
 
     unless items_data[item_name]
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 존재하지 않는 아이템입니다!")
+      MastodonClient.reply(mention, "'#{item_name}'은(는) 존재하지 않는 아이템입니다!")
       return
     end
 
     unless user_info['items'][item_name] && user_info['items'][item_name] > 0
-      MastodonClient.reply(mention, "❌ '#{item_name}'을(를) 보유하고 있지 않습니다!")
+      MastodonClient.reply(mention, "'#{item_name}'을(를) 보유하고 있지 않습니다!")
       return
     end
 
     item = items_data[item_name]
     unless item['usable']
-      MastodonClient.reply(mention, "❌ '#{item_name}'은(는) 사용할 수 없는 아이템입니다!")
+      MastodonClient.reply(mention, "'#{item_name}'은(는) 사용할 수 없는 아이템입니다!")
       return
     end
 
@@ -367,9 +408,8 @@ module CommandParser
     effect = item['effect'].empty? ? item['description'] : item['effect']
     
     use_messages = [
-      "✨ #{display_name}님이 '#{item_name}'을(를) 사용했습니다!\n🎯 효과: #{effect}",
-      "🌟 '#{item_name}' 사용 완료! #{effect}",
-      "⚡ #{display_name}님의 '#{item_name}' 사용! #{effect} 발동!"
+
+      "'#{item_name}' 사용 했습니다! #{effect}",
     ]
     
     MastodonClient.reply(mention, use_messages.sample)
@@ -380,57 +420,26 @@ module CommandParser
     items_data = load_items_data
     
     if items_data.empty?
-      MastodonClient.reply(mention, "🏪 현재 상점에 판매 중인 아이템이 없습니다!")
+      MastodonClient.reply(mention, "어머나, 지금은 팔 물건이 하나도 없네요!")
       return
     end
     
-    shop_text = "🏪 ECLYRIA 상점\n\n"
+    shop_text = "어서와요! 무슨 마법용품을 찾으시나요?\n\n"
     items_data.each do |item, data|
       next unless data['purchasable']
       
-      usable_mark = data['usable'] ? "🔄" : "📦"
-      transfer_mark = data['transferable'] ? "🎁" : "🔒"
-      
-      shop_text += "#{usable_mark}#{transfer_mark} #{item}: #{data['price']}G\n"
-      shop_text += "   └ #{data['description']}\n\n"
+      shop_text += "#{item}: #{data['price']}갈레온\n"
+      shop_text += "   - #{data['description']}\n\n"
     end
-    shop_text += "💡 구매: [구매/아이템명]"
+    shop_text += "구매하시려면 [구매/용품명] 하시면 됩니다"
 
     MastodonClient.reply(mention, shop_text)
   end
 
-  # 출석 (갈레온 보상 추가)
-  def self.handle_attendance(mention, acct, display_name)
-    users_data, user_info = get_user(acct)
-    
-    today = Date.today.to_s
-    
-    if user_info['last_attendance'] == today
-      MastodonClient.reply(mention, "❌ #{display_name}님은 오늘 이미 출석했습니다!")
-      return
-    end
-
-    # 출석 보상
-    reward = rand(10..30)
-    user_info['galleons'] += reward
-    user_info['last_attendance'] = today
-    save_users_data(users_data)
-
-    attendance_messages = [
-      "📋 #{display_name}님 출석 완료! 🎁 보상: #{reward}G\n💰 총 갈레온: #{user_info['galleons']}G",
-      "✅ #{display_name}님의 출석을 확인했어요! 💰 #{reward}G 획득!\n잔액: #{user_info['galleons']}G",
-      "🌟 #{display_name}님 출석! 오늘의 보상 #{reward}G를 받으세요! 💰#{user_info['galleons']}G"
-    ]
-    
-    MastodonClient.reply(mention, attendance_messages.sample)
-  end
 
   def self.handle_greeting(mention, acct, display_name)
     greeting_responses = [
-      "안녕하세요 #{display_name}님! 👋 ECLYRIA 모험에 오신 것을 환영합니다!",
-      "반가워요 #{display_name}님! 😊 오늘은 어떤 모험을 떠나볼까요?",
-      "🌟 #{display_name}님! 상점에서 아이템도 구경해보세요! [상점]",
-      "🎮 #{display_name}님 안녕하세요! [주머니]로 소지품을 확인해보세요!"
+      "안녕하세요 #{display_name}! 호그와트에서 멋진 학교생활을 보내시길 바랍니다.",
     ]
     
     MastodonClient.reply(mention, greeting_responses.sample)
@@ -438,21 +447,20 @@ module CommandParser
 
   def self.handle_help(mention, acct, display_name)
     help_text = <<~HELP
-      🤖 ECLYRIA RPG 봇 사용법:
+
+      신규 입학:
+      [입학/원하는이름] - 호그와트 입학 
       
-      🎮 게임 명령어:
-      📋 [출석] - 출석 체크 (갈레온 보상)
-      🏪 [상점] - 아이템 상점 보기
-      🛒 [구매/아이템명] - 아이템 구매
-      🎒 [주머니] - 갈레온 & 소지품 확인
-      🔄 [사용/아이템명] - 아이템 사용
-      🎁 [양도/아이템명/@상대ID] - 아이템 양도
-      💰 [양도/갈레온/금액/@상대ID] - 갈레온 양도
+      학교 상점 이용:
+       [상점] - 마법용품점 보기
+       [구매/아이템명] - 용품 구매
+       [주머니] - 갈레온 & 소지품 확인
+       [사용/아이템명] - 마법용품 사용
+       [양도/아이템명/@상대ID] - 용품 양도
+       [양도/갈레온/금액/@상대ID] - 갈레온 양도
+
       
-      💡 기본 명령어:
-      👋 안녕 - 인사
-      ❓ 도움말 - 이 메시지
-      📊 상태 - 봇 상태
+       입학하지 않으면 학교 시설을 이용할 수 없습니다!
     HELP
     
     MastodonClient.reply(mention, help_text)
@@ -466,8 +474,8 @@ module CommandParser
     item_count = items_data.keys.length
     
     status_messages = [
-      "🟢 ECLYRIA RPG 봇 정상 작동 중!\n👥 등록된 모험가: #{user_count}명\n🏪 상점 아이템: #{item_count}개\n⏰ #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}",
-      "✅ 모든 시스템 정상! 🎮 활성 플레이어: #{user_count}명\n📦 아이템 종류: #{item_count}개\n📅 #{Time.now.strftime('%Y년 %m월 %d일 %H시 %M분')}"
+      "호그와트 마법용품점 시스템 정상 작동 중!\n등록된 학생: #{user_count}명\n판매 중인 용품: #{item_count}개\n#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}",
+      "모든 시스템 정상! 활성 학생: #{user_count}명\n용품 종류: #{item_count}개\n#{Time.now.strftime('%Y년 %m월 %d일 %H시 %M분')}"
     ]
     
     MastodonClient.reply(mention, status_messages.sample)
@@ -475,9 +483,9 @@ module CommandParser
 
   def self.handle_unknown(mention, acct, display_name, text)
     unknown_responses = [
-      "🤔 #{display_name}님, 알 수 없는 명령어예요! '도움말'로 게임 사용법을 확인해보세요!",
-      "❓ #{display_name}님, RPG 명령어가 궁금하시면 '도움말'을 입력해주세요!",
-      "🎮 #{display_name}님, 게임 명령어 형식이 맞지 않아요! 예: [구매/체력포션]"
+      "#{display_name}님, 알 수 없는 명령어입니다! '도움말'을 확인해보세요!",
+      "#{display_name}님, 명령어가 궁금하시면 '도움말'을 입력해주세요!",
+      "#{display_name}님, 명령어 형식이 맞지 않습니다! 예: [구매/체력포션]"
     ]
     
     MastodonClient.reply(mention, unknown_responses.sample)
