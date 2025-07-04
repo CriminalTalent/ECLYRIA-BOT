@@ -1,10 +1,12 @@
 # bot/mastodon_client.rb
 require 'mastodon'
 require 'dotenv'
+
 Dotenv.load(File.expand_path('../.env', __dir__))
 
-puts "🧪 base_url: #{ENV['MASTODON_BASE_URL']}"
-puts "🧪 token: #{ENV['MASTODON_TOKEN'][0..10]}..." if ENV['MASTODON_TOKEN']
+puts "🧪 DEBUG ENV:"
+puts "BASE_URL: #{ENV['MASTODON_BASE_URL'].inspect}"
+puts "TOKEN: #{ENV['MASTODON_TOKEN']&.slice(0, 10)}..."
 
 module MastodonClient
   def self.client
