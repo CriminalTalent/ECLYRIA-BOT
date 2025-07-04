@@ -1,12 +1,13 @@
 # bot/command_parser.rb
 require_relative 'mastodon_client'
-require 'csv'
+require 'google_drive'
 require 'json'
 
 module CommandParser
-  ITEMS_CSV = 'items.csv'
-  USERS_CSV = 'users.csv'
-  RESPONSES_CSV = 'responses.csv'
+  # 구글 시트 워크시트 이름
+  ITEMS_SHEET = '아이템'
+  USERS_SHEET = '사용자'
+  RESPONSES_SHEET = '응답'
   
   def self.handle(mention)
     text = mention.status.content
@@ -18,13 +19,15 @@ module CommandParser
     
     puts "처리 중인 멘션: #{text}"
     
-    # CSV 파일에서 응답 찾기 (우선 처리)
-    if File.exist?(RESPONSES_CSV)
-      response = find_response_from_csv(text, display_name)
+    # 구글 시트에서 응답 찾기 (우선 처리)
+    begin
+      response = find_response_from_sheet(text, display_name)
       if response
         MastodonClient.reply(mention, response)
         return
       end
+    rescue => e
+      puts "응답 시트 확인 중 오류: #{e.message}"
     end
     
     # 게임 명령어 처리
@@ -56,24 +59,49 @@ module CommandParser
 
   private
 
-  # CSV 응답 시스템
-  def self.find_response_from_csv(text, display_name)
-    return nil unless File.exist?(RESPONSES_CSV)
-    
+  # 구글 시트 클라이언트
+  def self.google_client
+    @google_client ||= begin
+      credentials_path = ENV['GOOGLE_CREDENTIALS_PATH']
+      unless File.exist?(credentials_path)
+        raise "구글 인증 파일을 찾을 수 없습니다: #{credentials_path}"
+      end
+      
+      puts "📊 구글 시트에 연결 중..."
+      GoogleDrive::Session.from_service_account_key(credentials_path)
+    end
+  end
+
+  # 구글 스프레드시트 가져오기
+  def self.spreadsheet
+    @spreadsheet ||= begin
+      sheet_id = ENV['GOOGLE_SHEET_ID']
+      google_client.spreadsheet_by_key(sheet_id)
+    end
+  end
+
+  # 구글 시트 응답 시스템
+  def self.find_response_from_sheet(text, display_name)
     begin
+      worksheet = spreadsheet.worksheet_by_title(RESPONSES_SHEET)
+      return nil unless worksheet
+      
       responses = []
       
-      CSV.foreach(RESPONSES_CSV, headers: true, encoding: 'UTF-8') do |row|
+      # 헤더 행 스킵하고 데이터 행들 확인
+      (2..worksheet.num_rows).each do |row|
+        on_off = worksheet[row, 1]&.strip
+        keyword = worksheet[row, 2]&.strip
+        response_text = worksheet[row, 3]&.strip
+        
         # ON/OFF 체크
-        next unless row['ON/OFF']&.strip&.downcase == 'on' || row['ON/OFF']&.strip == '✓'
+        next unless on_off&.downcase == 'on' || on_off == '✓'
         
         # 키워드 매칭
-        keyword = row['인식 키워드']&.strip
         next unless keyword && text.include?(keyword.gsub(/[\[\]]/, ''))
         
-        # 응답 텍스트
-        response_text = row['답변 출력']&.strip || ''
-        next if response_text.empty?
+        # 응답 텍스트 확인
+        next if response_text.nil? || response_text.empty?
         
         # 이름 치환
         response_text = response_text.gsub(/\{name\}/, display_name)
@@ -84,85 +112,168 @@ module CommandParser
       responses.sample
       
     rescue => e
-      puts "응답 CSV 파일 읽기 오류: #{e.message}"
+      puts "응답 시트 읽기 오류: #{e.message}"
       nil
     end
   end
 
-  # 아이템 CSV 데이터 로드
+  # 아이템 데이터 로드
   def self.load_items_data
-    return {} unless File.exist?(ITEMS_CSV)
-    
-    items = {}
     begin
-      CSV.foreach(ITEMS_CSV, headers: true, encoding: 'UTF-8') do |row|
-        name = row['아이템명']&.strip
+      worksheet = spreadsheet.worksheet_by_title(ITEMS_SHEET)
+      return {} unless worksheet
+      
+      items = {}
+      
+      # 헤더 행 스킵하고 데이터 행들 읽기
+      (2..worksheet.num_rows).each do |row|
+        name = worksheet[row, 1]&.strip
         next unless name && !name.empty?
         
         items[name] = {
-          'price' => row['가격']&.to_i || 0,
-          'description' => row['설명']&.strip || '',
-          'purchasable' => row['구매가능']&.strip == '✓',
-          'transferable' => row['양도가능']&.strip == '✓',
-          'usable' => row['사용가능']&.strip == '✓',
-          'effect' => row['사용효과']&.strip || '',
-          'delete_on_use' => row['사용시 삭제됨']&.strip == '✓'
+          'price' => worksheet[row, 2]&.to_i || 0,
+          'description' => worksheet[row, 3]&.strip || '',
+          'purchasable' => worksheet[row, 4]&.strip == '✓',
+          'transferable' => worksheet[row, 5]&.strip == '✓',
+          'usable' => worksheet[row, 6]&.strip == '✓',
+          'effect' => worksheet[row, 7]&.strip || '',
+          'delete_on_use' => worksheet[row, 8]&.strip == '✓'
         }
       end
+      
+      puts "📦 아이템 #{items.size}개 로드됨"
+      items
+      
     rescue => e
-      puts "아이템 CSV 파일 읽기 오류: #{e.message}"
+      puts "아이템 시트 읽기 오류: #{e.message}"
+      {}
     end
-    
-    items
   end
 
-  # 사용자 CSV 데이터 로드
+  # 사용자 데이터 로드
   def self.load_users_data
-    return {} unless File.exist?(USERS_CSV)
-    
-    users = {}
     begin
-      CSV.foreach(USERS_CSV, headers: true, encoding: 'UTF-8') do |row|
-        id = row['ID']&.strip
+      worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
+      return {} unless worksheet
+      
+      users = {}
+      
+      # 헤더 행 스킵하고 데이터 행들 읽기
+      (2..worksheet.num_rows).each do |row|
+        id = worksheet[row, 1]&.strip
         next unless id && !id.empty?
         
         users[id] = {
-          'username' => row['유저명']&.strip || id,
-          'galleons' => row['갈레온']&.to_i || 20,
-          'items' => parse_items(row['소지품']),
-          'notes' => row['비고']&.strip || ''
+          'username' => worksheet[row, 2]&.strip || id,
+          'galleons' => worksheet[row, 3]&.to_i || 20,
+          'items' => parse_items(worksheet[row, 4]),
+          'notes' => worksheet[row, 5]&.strip || ''
         }
       end
+      
+      puts "👥 사용자 #{users.size}명 로드됨"
+      users
+      
     rescue => e
-      puts "사용자 CSV 파일 읽기 오류: #{e.message}"
+      puts "사용자 시트 읽기 오류: #{e.message}"
+      {}
     end
-    
-    users
   end
 
-  # 사용자 CSV 데이터 저장
+  # 사용자 데이터 저장
   def self.save_users_data(users_data)
     begin
-      CSV.open(USERS_CSV, 'w', encoding: 'UTF-8') do |csv|
-        csv << ['ID', '유저명', '갈레온', '소지품', '비고']
-        
-        users_data.each do |id, data|
-          items_string = format_items(data['items'])
-          csv << [
-            id,
-            data['username'],
-            data['galleons'],
-            items_string,
-            data['notes']
-          ]
-        end
+      worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
+      return unless worksheet
+      
+      puts "💾 사용자 데이터 저장 중..."
+      
+      # 기존 데이터 모두 삭제 (헤더 제외)
+      if worksheet.num_rows > 1
+        worksheet.delete_rows(2, worksheet.num_rows)
       end
+      
+      # 새 데이터 추가
+      row_num = 2
+      users_data.each do |id, data|
+        items_string = format_items(data['items'])
+        
+        worksheet[row_num, 1] = id
+        worksheet[row_num, 2] = data['username']
+        worksheet[row_num, 3] = data['galleons']
+        worksheet[row_num, 4] = items_string
+        worksheet[row_num, 5] = data['notes']
+        
+        row_num += 1
+      end
+      
+      # 시트 저장
+      worksheet.save
+      puts "✅ 사용자 데이터 저장 완료"
+      
     rescue => e
-      puts "사용자 CSV 파일 저장 오류: #{e.message}"
+      puts "사용자 시트 저장 오류: #{e.message}"
     end
   end
 
-  # 아이템 문자열 파싱
+  # 새 사용자를 시트에 추가 (더 효율적)
+  def self.add_new_user(acct, user_data)
+    begin
+      worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
+      return unless worksheet
+      
+      # 마지막 행에 새 사용자 추가
+      new_row = worksheet.num_rows + 1
+      items_string = format_items(user_data['items'])
+      
+      worksheet[new_row, 1] = acct
+      worksheet[new_row, 2] = user_data['username']
+      worksheet[new_row, 3] = user_data['galleons']
+      worksheet[new_row, 4] = items_string
+      worksheet[new_row, 5] = user_data['notes']
+      
+      worksheet.save
+      puts "✅ 신규 사용자 추가됨: #{user_data['username']}"
+      
+    rescue => e
+      puts "신규 사용자 추가 오류: #{e.message}"
+    end
+  end
+
+  # 특정 사용자 데이터만 업데이트 (더 효율적)
+  def self.update_user_data(acct, user_data)
+    begin
+      worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
+      return unless worksheet
+      
+      # 사용자 행 찾기
+      user_row = nil
+      (2..worksheet.num_rows).each do |row|
+        if worksheet[row, 1]&.strip == acct
+          user_row = row
+          break
+        end
+      end
+      
+      return unless user_row
+      
+      # 데이터 업데이트
+      items_string = format_items(user_data['items'])
+      
+      worksheet[user_row, 2] = user_data['username']
+      worksheet[user_row, 3] = user_data['galleons']
+      worksheet[user_row, 4] = items_string
+      worksheet[user_row, 5] = user_data['notes']
+      
+      worksheet.save
+      puts "✅ 사용자 데이터 업데이트됨: #{user_data['username']}"
+      
+    rescue => e
+      puts "사용자 데이터 업데이트 오류: #{e.message}"
+    end
+  end
+
+  # 아이템 문자열 파싱 (예: "체력포션x2,철검x1")
   def self.parse_items(items_string)
     return {} unless items_string && !items_string.strip.empty?
     
@@ -223,15 +334,16 @@ module CommandParser
       return
     end
 
-    # 신규 유저 등록
-    users_data[acct] = {
+    # 신규 유저 데이터
+    user_data = {
       'username' => new_name,
       'galleons' => 20,  
       'items' => {},
       'notes' => "#{Date.today} 입학"
     }
     
-    save_users_data(users_data)
+    # 구글 시트에 직접 추가 (더 효율적)
+    add_new_user(acct, user_data)
 
     welcome_messages = [
       "#{new_name}학생 호그와트 입학생임을 확인했습니다\n 열차에 탑승해주세요."
@@ -270,7 +382,9 @@ module CommandParser
     # 구매 처리
     user_info['galleons'] -= price
     user_info['items'][item_name] = (user_info['items'][item_name] || 0) + 1
-    save_users_data(users_data)
+    
+    # 개별 사용자 업데이트 (더 효율적)
+    update_user_data(acct, user_info)
 
     MastodonClient.reply(mention, "#{display_name}님이 '#{item_name}'을(를) #{price}G에 사갔다네! 고마워~\n#{item['description']}\n💰 잔여 갈레온: #{user_info['galleons']}G")
   end
@@ -312,6 +426,9 @@ module CommandParser
     sender['items'].delete(item_name) if sender['items'][item_name] == 0
     receiver['items'][item_name] = (receiver['items'][item_name] || 0) + 1
     
+    # 전체 사용자 데이터 저장 (양도는 두 명이 관련되므로)
+    users_data[acct] = sender
+    users_data[target_acct] = receiver
     save_users_data(users_data)
 
     MastodonClient.reply(mention, "#{display_name}님이 @#{target_acct}님에게 '#{item_name}'을(를) 양도했습니다!\n#{items_data[item_name]['description']}")
@@ -341,6 +458,9 @@ module CommandParser
     sender['galleons'] -= amount
     receiver['galleons'] += amount
     
+    # 전체 사용자 데이터 저장 (양도는 두 명이 관련되므로)
+    users_data[acct] = sender
+    users_data[target_acct] = receiver
     save_users_data(users_data)
 
     MastodonClient.reply(mention, "#{display_name}님이 @#{target_acct}님에게 #{amount}G를 양도했습니다!\n잔여 갈레온: #{sender['galleons']}G")
@@ -397,7 +517,8 @@ module CommandParser
       user_info['items'].delete(item_name) if user_info['items'][item_name] == 0
     end
     
-    save_users_data(users_data)
+    # 개별 사용자 업데이트
+    update_user_data(acct, user_info)
 
     effect = item['effect'].empty? ? item['description'] : item['effect']
     
@@ -428,7 +549,6 @@ module CommandParser
 
     MastodonClient.reply(mention, shop_text)
   end
-
 
   def self.handle_greeting(mention, acct, display_name)
     greeting_responses = [
@@ -467,8 +587,8 @@ module CommandParser
     item_count = items_data.keys.length
     
     status_messages = [
-      "호그와트 마법용품점 시스템 정상 작동 중!\n등록된 학생: #{user_count}명\n판매 중인 용품: #{item_count}개\n#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}",
-      "모든 시스템 정상! 활성 학생: #{user_count}명\n용품 종류: #{item_count}개\n#{Time.now.strftime('%Y년 %m월 %d일 %H시 %M분')}"
+      "호그와트 마법용품점 시스템 정상 작동 중!\n📊 구글 시트 연동 활성화\n등록된 학생: #{user_count}명\n판매 중인 용품: #{item_count}개\n#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}",
+      "모든 시스템 정상! 📊 실시간 시트 동기화\n활성 학생: #{user_count}명\n용품 종류: #{item_count}개\n#{Time.now.strftime('%Y년 %m월 %d일 %H시 %M분')}"
     ]
     
     MastodonClient.reply(mention, status_messages.sample)
