@@ -2,9 +2,10 @@
 require 'mastodon'
 require 'dotenv'
 
-Dotenv.load(File.expand_path('../.env', __dir__))
+# .env 로드: 상위 루트 경로로 접근
+Dotenv.load(File.expand_path('../../.env', __dir__))
 
-puts "🧪 DEBUG ENV:"
+puts "✅ DEBUG ENV:"
 puts "BASE_URL: #{ENV['MASTODON_BASE_URL'].inspect}"
 puts "TOKEN: #{ENV['MASTODON_TOKEN']&.slice(0, 10)}..."
 
