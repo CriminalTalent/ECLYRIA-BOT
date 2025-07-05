@@ -1,11 +1,18 @@
 require 'dotenv'
-Dotenv.load(File.expand_path('../.env', __dir__))
+Dotenv.load('.env')
 require_relative 'mastodon_client'
 require_relative 'command_parser'
 
-puts "호그와트 상점봇 기동 완료!"
+puts "ECLYRIA 마법용품점 기동 완료!"
 puts "BASE_URL: #{ENV['MASTODON_BASE_URL']}"
 puts "TOKEN 시작: #{ENV['MASTODON_TOKEN'][0..10]}..." if ENV['MASTODON_TOKEN']
+
+# 환경변수 디버깅
+puts "\n환경변수 확인:"
+puts "  MASTODON_BASE_URL: #{ENV['MASTODON_BASE_URL']}"
+puts "  MASTODON_TOKEN: #{ENV['MASTODON_TOKEN'] ? '설정됨' : '없음'}"
+puts "  GOOGLE_CREDENTIALS_PATH: #{ENV['GOOGLE_CREDENTIALS_PATH']}"
+puts "  GOOGLE_SHEET_ID: #{ENV['GOOGLE_SHEET_ID']}"
 
 # 구글 시트 설정 확인
 puts "\n구글 시트 설정 확인 중..."
@@ -30,108 +37,16 @@ end
 
 # 마스토돈 연결 테스트
 puts "\n마스토돈 연결 테스트 중..."
-unless MastodonClient.test_connection
-  puts "마스토돈 연결 실패! .env 파일의 설정을 확인하세요"
+begin
+  unless MastodonClient.test_connection
+    puts "마스토돈 연결 실패! .env 파일의 설정을 확인하세요"
+    exit 1
+  end
+rescue => e
+  puts "마스토돈 연결 오류: #{e.message}"
+  puts "Mastodon gem 설치를 확인해주세요: gem install mastodon"
   exit 1
 end
 
-# 구글 시트 연결 테스트
-puts "\n구글 시트 연결 테스트 중..."
-begin
-  require 'google_drive'
-  
-  if File.exist?(google_credentials)
-    session = GoogleDrive::Session.from_service_account_key(google_credentials)
-    spreadsheet = session.spreadsheet_by_key(google_sheet_id)
-    
-    puts "구글 시트 연결 성공!"
-    puts "   시트 제목: #{spreadsheet.title}"
-    
-    # 워크시트들 확인
-    worksheets = spreadsheet.worksheets
-    puts "   워크시트 목록:"
-    worksheets.each_with_index do |ws, idx|
-      puts "      #{idx + 1}. #{ws.title} (#{ws.num_rows}행 #{ws.num_cols}열)"
-    end
-    
-    # 필요한 워크시트들 확인 (상점봇용)
-    required_sheets = ['사용자', '응답', '아이템']
-    missing_sheets = required_sheets - worksheets.map(&:title)
-    
-    if missing_sheets.empty?
-      puts "   필요한 워크시트 모두 존재"
-    else
-      puts "   누락된 워크시트: #{missing_sheets.join(', ')}"
-      puts "      구글 시트에 해당 워크시트들을 생성해주세요"
-    end
-    
-  else
-    puts "인증 파일이 없습니다: #{google_credentials}"
-  end
-  
-rescue => e
-  puts "구글 시트 연결 실패: #{e.message}"
-  puts "   인증 설정이나 시트 권한을 확인해주세요"
-  puts "   계속 진행하되, 구글 시트 기능은 제한될 수 있습니다"
-end
-
-puts "\n호그와트 마법용품점 개점!"
-puts "멘션 수신 대기 중..."
-puts "   명령어 예시: [구매/체력포션], [베팅/10], [운세]"
-puts "   종료하려면 Ctrl+C를 누르세요"
-
-# 봇 실행 통계
-start_time = Time.now
-mention_count = 0
-error_count = 0
-
-loop do
-  begin
-    MastodonClient.listen_mentions do |mention|
-      begin
-        mention_count += 1
-        puts "\n멘션 ##{mention_count} 처리 중..."
-        
-        CommandParser.handle(mention)
-        
-      rescue => e
-        error_count += 1
-        puts "멘션 처리 오류 ##{error_count}: #{e.message}"
-        puts "   사용자: @#{mention.account.acct rescue 'unknown'}"
-        puts "   내용: #{mention.status.content.gsub(/<[^>]*>/, '').strip rescue 'unknown'}"
-        puts "   #{e.backtrace.first(3).join("\n   ")}"
-        
-        # 심각한 오류 시 사용자에게 알림
-        begin
-          MastodonClient.reply(mention, "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
-        rescue
-          puts "   응답 전송도 실패했습니다"
-        end
-      end
-    end
-    
-  rescue Interrupt
-    puts "\n\n상점 폐점 중..."
-    uptime = Time.now - start_time
-    hours = (uptime / 3600).to_i
-    minutes = ((uptime % 3600) / 60).to_i
-    
-    puts "영업 통계:"
-    puts "   영업 시간: #{hours}시간 #{minutes}분"
-    puts "   처리한 주문: #{mention_count}개"
-    puts "   오류 발생: #{error_count}개"
-    puts "   성공률: #{mention_count > 0 ? ((mention_count - error_count) * 100.0 / mention_count).round(1) : 0}%"
-    
-    puts "호그와트 마법용품점을 폐점합니다. 또 오세요!"
-    break
-    
-  rescue => e
-    error_count += 1
-    puts "연결 오류 ##{error_count}: #{e.message}"
-    puts "   #{e.class}: #{e.backtrace.first}"
-    puts "15초 후 재연결 시도..."
-    sleep 15
-  end
-  
-  sleep 15
-end
+puts "\nECLYRIA 마법용품점 개점!"
+puts "Ctrl+C로 종료"
