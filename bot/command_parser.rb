@@ -54,7 +54,7 @@ module CommandParser
       handle_yes_no_simple(mention, acct, display_name)
     when /^\[운세\]$/i
       handle_tarot_fortune(mention, acct, display_name)
-    when /^\[동전\]$/i, /^\[동전던지기\]$/i
+    when /^\[동전\]$/i
       handle_coin_flip(mention, acct, display_name)
 
     else
@@ -256,7 +256,7 @@ module CommandParser
     
     # 빚이 있으면 구매 제한
     if user_info['galleons'] < 0
-      MastodonClient.reply(mention, "빚을 먼저 갚아야 합니다! 빚: #{user_info['galleons'].abs}G")
+      MastodonClient.reply(mention, "빚부터 갚아요! 빚: #{user_info['galleons'].abs}G")
       return
     end
     
@@ -358,8 +358,8 @@ module CommandParser
     
     if user_info.nil?
       unregistered_messages = [
-        "#{display_name}님은 호그와트 학적부에서 확인되지 않습니다.\n교수봇에서 [입학/이름]으로 등록해주세요!",
-        "#{display_name}님은 미등록 학생입니다.\n먼저 교수봇에서 입학 절차를 밟아주세요!"
+        "#{display_name}님은 호그와트 학적부에서 확인되지 않습니다.\n교수님에게 [입학/이름]으로 등록해주세요!",
+        "#{display_name}님은 미등록 학생입니다.\n먼저 교수님에게 입학 절차를 밟아주세요!"
       ]
       
       MastodonClient.reply(mention, unregistered_messages.sample)
@@ -539,7 +539,7 @@ module CommandParser
       return
     end
     
-    shop_text = "어서와요! 무슨 마법용품을 찾으시나요?\n\n"
+    shop_text = "어서와요! 무슨 물건을 찾으시나요?\n\n"
     items_data.each do |item, data|
       next unless data['purchasable']
       
@@ -576,8 +576,8 @@ module CommandParser
       return
     end
     
-    if bet_amount > 20
-      MastodonClient.reply(mention, "최대 베팅 금액은 20갈레온입니다!")
+    if bet_amount > 10
+      MastodonClient.reply(mention, "최대 베팅 금액은 10갈레온입니다!")
       return
     end
     
@@ -603,9 +603,7 @@ module CommandParser
       user_info['galleons'] = user_info['galleons'] - bet_amount + bet_amount + winnings
       
       win_messages = [
-        "대박! x#{result_multiplier} 성공!",
-        "운이 좋으시네요!",
-        "훌륭한 승리입니다!"
+        "x#{result_multiplier} 성공!",
       ]
       
       debt_status = user_info['galleons'] < 0 ? "\n빚: #{user_info['galleons'].abs}G" : ""
@@ -617,9 +615,7 @@ module CommandParser
       user_info['galleons'] = user_info['galleons'] - bet_amount - loss_amount
       
       lose_messages = [
-        "아쉽네요!",
-        "이번엔 운이 없었어요.",
-        "다음엔 행운을!"
+        "이번엔 운이 없었어요."
       ]
       
       debt_warning = ""
@@ -656,23 +652,8 @@ module CommandParser
   def self.handle_dice_100(mention, acct, display_name)
     result = rand(100) + 1
     
-    special_messages = {
-      1 => "최악의 운!",
-      100 => "전설적인 운!"
-    }
     
-    rank = case result
-           when 1..10 then "매우 나쁨"
-           when 11..30 then "나쁨"
-           when 31..50 then "보통"
-           when 51..70 then "좋음"
-           when 71..90 then "매우 좋음"
-           when 91..99 then "최상급"
-           when 100 then "전설급"
-           end
-    
-    message = "#{display_name}님의 D100 주사위: #{result}\n등급: #{rank}"
-    message += "\n#{special_messages[result]}" if special_messages[result]
+    message = "#{result}"
     
     MastodonClient.reply(mention, message)
   end
@@ -682,9 +663,8 @@ module CommandParser
     # YES/NO 두 가지만
     answers = ["YES", "NO"]
     answer = answers.sample
-    emoji = answer == "YES" ? "O" : "X"
     
-    response = "#{display_name}님의 점술 결과:\n\n#{emoji} **#{answer}**"
+    response = "#{answer}"
     
     MastodonClient.reply(mention, response)
   end
@@ -823,16 +803,14 @@ module CommandParser
     response = <<~TAROT
       #{display_name}님의 오늘의 타로
       
-      **#{selected_card[:name]}**
+      #{selected_card[:name]}
       
-      **해석**: #{selected_card[:meaning]}
-      
-      **행운의 색**: #{random_color}
-      **행운의 물건**: #{random_item}
-      **보너스 추천**: #{bonus_item}
+      해석: #{selected_card[:meaning]}
+      행운의 색: #{random_color}
+      행운의 물건: #{random_item}
+      보너스 추천: #{bonus_item}
       
       오늘 하루도 행운이 가득하길!
-    TAROT
 
     MastodonClient.reply(mention, response)
   end
@@ -840,20 +818,13 @@ module CommandParser
   # 동전 던지기
   def self.handle_coin_flip(mention, acct, display_name)
     result = rand(2) == 0 ? "앞면" : "뒷면"
-    emoji = result == "앞면" ? "O" : "X"
     
     flip_messages = [
-      "동전이 빙글빙글... #{emoji} #{result}!",
-      "띵! #{emoji} #{result}이 나왔습니다!",
-      "#{emoji} 결과는... #{result}!"
+      "동전이 빙글빙글... 띵! #{result}이 나왔습니다!"
     ]
-    
-    response = "#{display_name}님의 동전던지기:\n#{flip_messages.sample}"
-    
+  
     MastodonClient.reply(mention, response)
   end
-
-
 
   def self.handle_unknown(mention, acct, display_name, text)
     unknown_responses = [
