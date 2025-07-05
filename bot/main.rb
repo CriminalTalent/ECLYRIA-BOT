@@ -1,9 +1,9 @@
 require 'dotenv'
-Dotenv.load(File.expand_path('../.env', **dir**))
+Dotenv.load(File.expand_path('../.env', __dir__))
 require_relative 'mastodon_client'
 require_relative 'command_parser'
 
-puts "호그와트 교수봇 기동 완료!"
+puts "호그와트 상점봇 기동 완료!"
 puts "BASE_URL: #{ENV['MASTODON_BASE_URL']}"
 puts "TOKEN 시작: #{ENV['MASTODON_TOKEN'][0..10]}..." if ENV['MASTODON_TOKEN']
 
@@ -54,8 +54,8 @@ begin
       puts "      #{idx + 1}. #{ws.title} (#{ws.num_rows}행 #{ws.num_cols}열)"
     end
     
-    # 필요한 워크시트들 확인 (교수봇용)
-    required_sheets = ['사용자', '응답', '기숙사점수']
+    # 필요한 워크시트들 확인 (상점봇용)
+    required_sheets = ['사용자', '응답', '아이템']
     missing_sheets = required_sheets - worksheets.map(&:title)
     
     if missing_sheets.empty?
@@ -75,9 +75,9 @@ rescue => e
   puts "   계속 진행하되, 구글 시트 기능은 제한될 수 있습니다"
 end
 
-puts "\n호그와트 교수봇 업무 시작!"
+puts "\n호그와트 마법용품점 개점!"
 puts "멘션 수신 대기 중..."
-puts "   명령어 예시: [입학/해리포터], [출석], [과제]"
+puts "   명령어 예시: [구매/체력포션], [베팅/10], [운세]"
 puts "   종료하려면 Ctrl+C를 누르세요"
 
 # 봇 실행 통계
@@ -111,18 +111,18 @@ loop do
     end
     
   rescue Interrupt
-    puts "\n\n봇 종료 중..."
+    puts "\n\n상점 폐점 중..."
     uptime = Time.now - start_time
     hours = (uptime / 3600).to_i
     minutes = ((uptime % 3600) / 60).to_i
     
-    puts "운영 통계:"
-    puts "   운영 시간: #{hours}시간 #{minutes}분"
-    puts "   처리한 멘션: #{mention_count}개"
+    puts "영업 통계:"
+    puts "   영업 시간: #{hours}시간 #{minutes}분"
+    puts "   처리한 주문: #{mention_count}개"
     puts "   오류 발생: #{error_count}개"
     puts "   성공률: #{mention_count > 0 ? ((mention_count - error_count) * 100.0 / mention_count).round(1) : 0}%"
     
-    puts "호그와트 교수봇 업무를 마칩니다. 안녕히 계세요!"
+    puts "호그와트 마법용품점을 폐점합니다. 또 오세요!"
     break
     
   rescue => e
