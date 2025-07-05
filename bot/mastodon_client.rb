@@ -23,7 +23,7 @@ module MastodonClient
       # 새로운 멘션이 있다면 마지막 ID 업데이트
       if mentions.any?
         @last_mention_id = mentions.first.id
-        puts "새로운 멘션 #{mentions.size}개 도착!"
+        puts "새로운 주문 #{mentions.size}개 도착!"
         
         # 시간순으로 처리하기 위해 reverse
         mentions.reverse.each do |mention|
@@ -49,7 +49,7 @@ module MastodonClient
       puts "   #{e.message}"
       sleep 30
     rescue => e
-      puts "멘션 확인 중 오류: #{e.message}"
+      puts "주문 확인 중 오류: #{e.message}"
       puts "   #{e.class}: #{e.backtrace.first}"
       sleep 30
     end
@@ -66,12 +66,12 @@ module MastodonClient
       if messages.length == 1
         # 단일 메시지
         response = send_single_reply(acct, messages.first, status_id)
-        puts "@#{acct}에게 응답 완료"
+        puts "@#{acct}에게 상품 정보 전달 완료"
         response
       else
         # 다중 메시지 (스레드)
         responses = send_thread_replies(acct, messages, status_id)
-        puts "@#{acct}에게 스레드 응답 완료 (#{messages.length}개 툿)"
+        puts "@#{acct}에게 상세 정보 스레드 전송 완료 (#{messages.length}개 툿)"
         responses
       end
       
@@ -102,7 +102,7 @@ module MastodonClient
       return [message]
     end
     
-    puts "긴 메시지를 분할합니다 (#{message.length}자 → 여러 툿)"
+    puts "긴 상품 정보를 분할합니다 (#{message.length}자 → 여러 툿)"
     
     messages = []
     remaining = message.dup
@@ -200,9 +200,9 @@ module MastodonClient
     begin
       account = client.verify_credentials
       puts "마스토돈 서버 연결 성공!"
-      puts "   계정: @#{account.acct}"
-      puts "   표시명: #{account.display_name}"
-      puts "   팔로워: #{account.followers_count}명"
+      puts "   상점 계정: @#{account.acct}"
+      puts "   상점명: #{account.display_name}"
+      puts "   고객 수: #{account.followers_count}명"
       true
     rescue Mastodon::Error::Unauthorized => e
       puts "서버 연결 실패: 토큰이 유효하지 않습니다"
@@ -223,10 +223,10 @@ module MastodonClient
   def self.post_status(message, visibility: 'public')
     begin
       response = client.create_status(message, visibility: visibility)
-      puts "상태 메시지 게시 완료"
+      puts "상점 공지사항 게시 완료"
       response
     rescue => e
-      puts "상태 메시지 게시 실패: #{e.message}"
+      puts "상점 공지사항 게시 실패: #{e.message}"
       nil
     end
   end
@@ -237,7 +237,7 @@ module MastodonClient
       notifications = client.notifications(limit: limit)
       mentions = notifications.select { |n| n.type == 'mention' }
       
-      puts "최근 멘션 #{mentions.size}개:"
+      puts "최근 주문 #{mentions.size}개:"
       mentions.each_with_index do |mention, index|
         acct = mention.account.acct
         content = mention.status.content.gsub(/<[^>]*>/, '').strip
@@ -247,7 +247,7 @@ module MastodonClient
       
       mentions
     rescue => e
-      puts "최근 멘션 조회 실패: #{e.message}"
+      puts "최근 주문 조회 실패: #{e.message}"
       []
     end
   end
