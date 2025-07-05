@@ -31,20 +31,6 @@ module CommandParser
       handle_attendance(mention, acct, display_name)
     when /^\[과제\]$/i, /^과제$/i
       handle_assignment(mention, acct, display_name)
-    when /^\[점수부여\/(.+)\/(\d+)\/(.+)\]$/i
-      handle_award_points(mention, acct, display_name, $1, $2.to_i, $3)
-    when /^\[점수차감\/(.+)\/(\d+)\/(.+)\]$/i
-      handle_deduct_points(mention, acct, display_name, $1, $2.to_i, $3)
-    when /^\[기숙사배정\/(.+)\/(.+)\]$/i
-      handle_assign_house(mention, acct, display_name, $1, $2)
-    when /^\[기숙사순위\]$/i, /^\[순위\]$/i
-      handle_house_ranking(mention, acct, display_name)
-    when /^\[학생현황\]$/i
-      handle_student_status(mention, acct, display_name)
-    when /안녕/i, /교수님/i, /professor/i
-      handle_greeting(mention, acct, display_name)
-    when /도움말/i, /help/i
-      handle_help(mention, acct, display_name)
     else
       handle_unknown(mention, acct, display_name, text)
     end
@@ -83,10 +69,11 @@ module CommandParser
       
       if worksheet
         (2..worksheet.num_rows).each do |row|
-          keyword = worksheet[row, 2]&.strip
-          message = worksheet[row, 3]&.strip
+          on_off = worksheet[row, 1]&.strip      # ON/OFF 컬럼
+          keyword = worksheet[row, 2]&.strip     # 인식 키워드 컬럼
+          message = worksheet[row, 4]&.strip     # 답변 출력 컬럼
           
-          next unless keyword&.include?('[출석]') && message && !message.empty?
+          next unless on_off == 'ON' && keyword&.include?('[출석]') && message && !message.empty?
           
           attendance_messages << message
         end
@@ -106,10 +93,10 @@ module CommandParser
         #{base_message}
         
         출석 확인을 위해 [출석]을 멘션해 주시기 바랍니다. (오후 10시까지)
-        출석 확인 시: 2갈레온 및 기숙사 1점이 지급됩니다.
+        2갈레온 및 기숙사 1점이 지급됩니다.
         
         과제 제출을 원하시는 분은 [과제] 명령어와 함께 교수를 태그해 주시기 바랍니다.
-        과제 제출 시: 5갈레온 및 기숙사 3점이 지급됩니다.
+        5갈레온 및 기숙사 3점이 지급됩니다.
       MESSAGE
       
       full_message
@@ -237,11 +224,11 @@ module CommandParser
   # 신규 유저 입학 처리 (상점봇에서 이관)
   def self.handle_enrollment(mention, acct, display_name, new_name)
     new_name = new_name.strip
-    users_data = load_users_data
     
     # 이미 등록된 사용자인지 확인
-    if users_data[acct]
-      current_name = users_data[acct]['username']
+    existing_user = get_user_from_shop(acct)
+    if existing_user
+      current_name = existing_user['username']
       MastodonClient.reply(mention, "#{display_name}님께서는 이미 '#{current_name}' 성명으로 등록되어 계십니다.")
       return
     end
@@ -271,13 +258,13 @@ module CommandParser
       worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
       return unless worksheet
       
-      # 헤더 확인 및 추가
+      # 헤더 확인 및 추가 (새로운 헤더 구조)
       headers = [
-        '마지막출석일', '마지막과제일', '마지막베팅일', '오늘베팅횟수'
+        'ID', '유저명', '갈레온', '소지품', '비고', '기숙사', '마지막출석일', '마지막과제일', '마지막베팅일'
       ]
       
       headers.each_with_index do |header, index|
-        col = 7 + index
+        col = index + 1
         if worksheet[1, col].nil? || worksheet[1, col].strip.empty?
           worksheet[1, col] = header
         end
@@ -287,19 +274,18 @@ module CommandParser
       new_row = worksheet.num_rows + 1
       items_string = format_items(user_data['items'])
       
-      worksheet[new_row, 1] = acct
-      worksheet[new_row, 2] = user_data['username']
-      worksheet[new_row, 3] = user_data['galleons']
-      worksheet[new_row, 4] = items_string
-      worksheet[new_row, 5] = user_data['notes']
-      worksheet[new_row, 6] = user_data['house'] || ''
-      worksheet[new_row, 7] = user_data['last_attendance'] || ''
-      worksheet[new_row, 8] = user_data['last_assignment'] || ''
-      worksheet[new_row, 9] = ''  # 마지막베팅일
-      worksheet[new_row, 10] = 0  # 오늘베팅횟수
+      worksheet[new_row, 1] = acct                             # ID
+      worksheet[new_row, 2] = user_data['username']            # 유저명
+      worksheet[new_row, 3] = user_data['galleons']            # 갈레온
+      worksheet[new_row, 4] = items_string                     # 소지품
+      worksheet[new_row, 5] = user_data['notes']               # 비고
+      worksheet[new_row, 6] = user_data['house'] || ''         # 기숙사
+      worksheet[new_row, 7] = user_data['last_attendance'] || '' # 마지막출석일
+      worksheet[new_row, 8] = user_data['last_assignment'] || '' # 마지막과제일
+      worksheet[new_row, 9] = ''                               # 마지막베팅일
       
       worksheet.save
-      puts "✅ 신규 사용자 추가됨: #{user_data['username']}"
+      puts "신규 사용자 추가됨: #{user_data['username']}"
       
     rescue => e
       puts "신규 사용자 추가 오류: #{e.message}"
@@ -320,15 +306,15 @@ module CommandParser
       return nil unless worksheet
       
       (2..worksheet.num_rows).each do |row|
-        if worksheet[row, 1]&.strip == acct
+        if worksheet[row, 1]&.strip == acct  # ID 컬럼
           return {
-            'username' => worksheet[row, 2]&.strip,
-            'galleons' => worksheet[row, 3]&.to_i || 0,
-            'items' => worksheet[row, 4]&.strip || '',
-            'notes' => worksheet[row, 5]&.strip || '',
-            'house' => worksheet[row, 6]&.strip || '',        # 기숙사 정보
-            'last_attendance' => worksheet[row, 7]&.strip || '', # 마지막 출석일
-            'last_assignment' => worksheet[row, 8]&.strip || ''  # 마지막 과제 제출일
+            'username' => worksheet[row, 2]&.strip,      # 유저명
+            'galleons' => worksheet[row, 3]&.to_i || 0,  # 갈레온
+            'items' => worksheet[row, 4]&.strip || '',   # 소지품
+            'notes' => worksheet[row, 5]&.strip || '',   # 비고
+            'house' => worksheet[row, 6]&.strip || '',   # 기숙사
+            'last_attendance' => worksheet[row, 7]&.strip || '', # 마지막출석일
+            'last_assignment' => worksheet[row, 8]&.strip || ''  # 마지막과제일
           }
         end
       end
@@ -400,8 +386,8 @@ module CommandParser
     return unless worksheet
     
     (2..worksheet.num_rows).each do |row|
-      if worksheet[row, 1]&.strip == acct
-        worksheet[row, 3] = new_galleons
+      if worksheet[row, 1]&.strip == acct  # ID 컬럼
+        worksheet[row, 3] = new_galleons   # 갈레온 컬럼
         worksheet.save
         puts "#{acct} 갈레온 업데이트: #{new_galleons}G"
         break
@@ -414,19 +400,11 @@ module CommandParser
     worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
     return unless worksheet
     
-    # 헤더 확인 및 추가
-    if worksheet[1, 7].nil? || worksheet[1, 7].strip.empty?
-      worksheet[1, 7] = '마지막출석일'
-    end
-    if worksheet[1, 8].nil? || worksheet[1, 8].strip.empty?
-      worksheet[1, 8] = '마지막과제일'
-    end
-    
     (2..worksheet.num_rows).each do |row|
-      if worksheet[row, 1]&.strip == acct
-        worksheet[row, 7] = date
+      if worksheet[row, 1]&.strip == acct  # ID 컬럼
+        worksheet[row, 7] = date           # 마지막출석일 컬럼
         worksheet.save
-        puts "✅ #{acct} 출석일 업데이트: #{date}"
+        puts "#{acct} 출석일 업데이트: #{date}"
         break
       end
     end
@@ -437,19 +415,11 @@ module CommandParser
     worksheet = spreadsheet.worksheet_by_title(USERS_SHEET)
     return unless worksheet
     
-    # 헤더 확인 및 추가
-    if worksheet[1, 7].nil? || worksheet[1, 7].strip.empty?
-      worksheet[1, 7] = '마지막출석일'
-    end
-    if worksheet[1, 8].nil? || worksheet[1, 8].strip.empty?
-      worksheet[1, 8] = '마지막과제일'
-    end
-    
     (2..worksheet.num_rows).each do |row|
-      if worksheet[row, 1]&.strip == acct
-        worksheet[row, 8] = date
+      if worksheet[row, 1]&.strip == acct  # ID 컬럼
+        worksheet[row, 8] = date           # 마지막과제일 컬럼
         worksheet.save
-        puts "✅ #{acct} 과제 제출일 업데이트: #{date}"
+        puts "#{acct} 과제 제출일 업데이트: #{date}"
         break
       end
     end
@@ -484,12 +454,12 @@ module CommandParser
           worksheet[row, 2] = new_points
           worksheet[row, 3] = "#{Time.now.strftime('%m/%d %H:%M')} #{reason}"
           worksheet.save
-          puts "✅ #{house} 점수 변경: #{points > 0 ? '+' : ''}#{points}점 (#{reason}) → 총 #{new_points}점"
+          puts "#{house} 점수 변경: #{points > 0 ? '+' : ''}#{points}점 (#{reason}) → 총 #{new_points}점"
           return true
         end
       end
       
-      puts "❌ 기숙사를 찾을 수 없음: #{house}"
+      puts "기숙사를 찾을 수 없음: #{house}"
       false
     rescue => e
       puts "기숙사 점수 업데이트 오류: #{e.message}"
@@ -510,10 +480,11 @@ module CommandParser
       
       if worksheet
         (2..worksheet.num_rows).each do |row|
-          keyword = worksheet[row, 2]&.strip
-          response = worksheet[row, 3]&.strip  # C열: 답변 출력
+          on_off = worksheet[row, 1]&.strip      # ON/OFF 컬럼
+          keyword = worksheet[row, 2]&.strip     # 인식 키워드 컬럼
+          response = worksheet[row, 4]&.strip    # 답변 출력 컬럼
           
-          if keyword&.include?('[출석]') && response && !response.empty?
+          if on_off == 'ON' && keyword&.include?('[출석]') && response && !response.empty?
             responses << response.gsub(/\{name\}/, display_name)
           end
         end
@@ -537,7 +508,7 @@ module CommandParser
         "늦은 시간까지 수고하셨습니다."
       end
       
-      "#{base_response}\n학업에 대한 성실함을 인정하여 갈레온 2개와 기숙사 점수 1점을 지급해 드렸습니다.\n\n#{time_advice}"
+      "출석 확인: #{base_response}\n학업에 대한 성실함을 인정하여 갈레온 2개와 기숙사 점수 1점을 지급해 드렸습니다.\n\n#{time_advice}"
       
     rescue => e
       puts "응답 메시지 로드 오류: #{e.message}"
@@ -558,10 +529,11 @@ module CommandParser
       
       if worksheet
         (2..worksheet.num_rows).each do |row|
-          keyword = worksheet[row, 2]&.strip
-          response = worksheet[row, 3]&.strip  # C열: 답변 출력
+          on_off = worksheet[row, 1]&.strip      # ON/OFF 컬럼
+          keyword = worksheet[row, 2]&.strip     # 인식 키워드 컬럼
+          response = worksheet[row, 4]&.strip    # 답변 출력 컬럼
           
-          if keyword&.include?('[과제]') && response && !response.empty?
+          if on_off == 'ON' && keyword&.include?('[과제]') && response && !response.empty?
             responses << response.gsub(/\{name\}/, display_name)
           end
         end
@@ -585,11 +557,11 @@ module CommandParser
         "늦은 시간까지 과제에 임하시느라 수고하셨습니다."
       end
       
-      "#{base_response}\n성실한 학업 태도에 대한 보상으로 갈레온 5개와 기숙사 점수 3점을 지급해 드렸습니다.\n\n#{time_advice}"
+      "과제 확인: #{base_response}\n성실한 학업 태도에 대한 보상으로 갈레온 5개와 기숙사 점수 3점을 지급해 드렸습니다.\n\n#{time_advice}"
       
     rescue => e
       puts "과제 응답 메시지 로드 오류: #{e.message}"
-      " #{display_name}님의 과제를 검토하였습니다.\n성실한 학업 태도에 대한 보상으로 갈레온 5개와 기숙사 점수 3점을 지급해 드렸습니다."
+      "#{display_name}님의 과제를 검토하였습니다.\n성실한 학업 태도에 대한 보상으로 갈레온 5개와 기숙사 점수 3점을 지급해 드렸습니다."
     end
   end
 
@@ -731,7 +703,7 @@ module CommandParser
     success = add_house_points(student_info['house'], -points, "#{student_name} #{reason}")
     
     if success
-      MastodonClient.reply(mention, " #{student_name}님(#{student_info['house']})께서 #{points}점을 차감당하셨습니다.\n사유: #{reason}\n\n앞으로 더욱 모범적인 행동을 기대합니다.")
+      MastodonClient.reply(mention, "#{student_name}님(#{student_info['house']})께서 #{points}점을 차감당하셨습니다.\n사유: #{reason}\n\n앞으로 더욱 모범적인 행동을 기대합니다.")
     else
       MastodonClient.reply(mention, "점수 차감 과정에서 문제가 발생하였습니다.")
     end
