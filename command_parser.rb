@@ -811,7 +811,7 @@ module CommandParser
       보너스 추천: #{bonus_item}
       
       오늘 하루도 행운이 가득하길!
-
+TAROT
     MastodonClient.reply(mention, response)
   end
 
