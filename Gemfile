@@ -1,3 +1,4 @@
+# 호그와트 마법용품점 봇 - Gemfile
 source 'https://rubygems.org'
 
 # 마스토돈 API 클라이언트
