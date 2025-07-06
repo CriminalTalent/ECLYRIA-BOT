@@ -2,6 +2,8 @@ require_relative 'mastodon_client'
 require 'google_drive'
 require 'time'
 require 'json'
+require_relative 'features/tarot'
+require_relative 'features/betting'
 
 module CommandParser
   USERS_SHEET = '사용자'
@@ -14,7 +16,6 @@ module CommandParser
 
     puts "처리 중인 멘션: #{text}"
 
-    # 시트 불러오기
     session = GoogleDrive::Session.from_config(ENV['GOOGLE_CREDENTIALS_PATH'])
     ws_users = sheet.worksheet_by_title(USERS_SHEET)
     ws_items = sheet.worksheet_by_title(ITEMS_SHEET)
@@ -39,6 +40,13 @@ module CommandParser
 
     when /\[주머니\]/
       handle_inventory(client, ws_users, sender)
+
+    when /\[타로\]/
+      Tarot.draw(client, sender)
+
+    when /\[베팅\/(\d+)\]/
+      amount = $1.to_i
+      Betting.process(client, sheet, sender, amount)
     end
   end
 
@@ -113,7 +121,6 @@ module CommandParser
     sender_row = find_user_row(ws_users, sender)
     receiver_row = find_user_row(ws_users, receiver)
 
-    # 기본값으로 1갈레온씩 양도
     amount = 1
     sender_galleon = ws_users[sender_row - 1][2].to_i
 
