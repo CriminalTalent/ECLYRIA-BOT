@@ -30,7 +30,7 @@ module CommandParser
 
       # 사용자 등록 확인
       unless ensure_user_exists(ws_users, sender)
-        MastodonClient.reply(mention.status, "어머, 처음 보는 얼굴이네? 계정 만들어줬으니까 다시 와~")
+        MastodonClient.reply(mention.status, "어머, 처음 보는 얼굴이네? 교수님께 가서 [입학/#{sender}]로 입학 절차부터 밟고 와~")
         return
       end
 
@@ -63,12 +63,18 @@ module CommandParser
         amount = $1.to_i
         handle_betting(ws_users, mention, sender, amount)
 
+      when /\[100D\]/
+        handle_dice(mention, sender, 100)
+
+      when /\[20D\]/
+        handle_dice(mention, sender, 20)
+
       when /\[도움말\]/, /\[명령어\]/
         handle_help(mention)
 
       else
         puts "[무시] 알 수 없는 명령어: #{text}"
-        MastodonClient.reply(mention.status, "뭔 소리야? [도움말] 쳐보렴!")
+        MastodonClient.reply(mention.status, "#{sender}님, 알 수 없는 명령어입니다! [도움말] 쳐보세요!")
       end
 
     rescue => e
@@ -82,21 +88,8 @@ module CommandParser
     user_row = find_user_row(ws_users, sender)
     return true if user_row
 
-    begin
-      # 새 사용자 등록
-      last_row = ws_users.num_rows + 1
-      ws_users[last_row, 1] = sender        # 사용자 ID
-      ws_users[last_row, 2] = Time.now.strftime('%Y-%m-%d %H:%M:%S')  # 등록일
-      ws_users[last_row, 3] = "100"         # 초기 갈레온
-      ws_users[last_row, 4] = ""            # 소지 아이템
-      ws_users.save
-      
-      puts "[등록] 새 사용자 등록: @#{sender}"
-      return false  # 새 사용자이므로 false 반환
-    rescue => e
-      puts "[오류] 사용자 등록 실패: #{e.message}"
-      return true   # 오류 시 기존 사용자로 처리
-    end
+    # 새 사용자는 교수님께 가서 입학 절차 밟도록 안내
+    false
   end
 
   def self.find_user_row(ws_users, id)
@@ -440,7 +433,7 @@ module CommandParser
     tarot_result = <<~TAROT
       어머, #{selected_card[:name]} 카드가 나왔네!
       
-      이게 뭔 뜻이냐면: #{selected_card[:desc]}
+      이게 뭔 뜻이냐면#{selected_card[:desc]}
       
       오늘 너한테 좋은 건:
       행운의 색: #{selected_color}
@@ -489,7 +482,7 @@ module CommandParser
         MastodonClient.reply(mention.status, "어머, 대박이네! #{multiplier}배 떴어~ #{result:+d}갈레온으로 총 #{new_galleon}갈레온 됐네!")
       elsif multiplier == 0
         puts "[완료] 베팅 무승부: 0배 (#{result}갈레온)"
-        MastodonClient.reply(mention.status, "어머, 무승부야~ 그대로 #{new_galleon}갈레온이네!")
+        MastodonClient.reply(mention.status, "어머, 본전이야~ 그대로 #{new_galleon}갈레온이네!")
       else
         puts "[완료] 베팅 실패: #{multiplier}배 (#{result}갈레온)"
         if new_galleon < 0
