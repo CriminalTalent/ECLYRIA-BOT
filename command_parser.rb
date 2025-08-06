@@ -1,58 +1,67 @@
-# command_parser.rb
-require_relative './commands/buy_command'
-require_relative './commands/transfer_item_command'
-require_relative './commands/transfer_galleons_command'
-require_relative './commands/pouch_command'
-require_relative './commands/use_item_command'
-require_relative './commands/tarot_command'
-require_relative './commands/bet_command'
-require_relative './commands/dice_command'
-require_relative './commands/coin_command'
+require_relative 'commands/buy_command'
+require_relative 'commands/transfer_item_command'
+require_relative 'commands/transfer_galleons_command'
+require_relative 'commands/use_item_command'
+require_relative 'commands/pouch_command'
+require_relative 'commands/tarot_command'
+require_relative 'commands/bet_command'
+require_relative 'commands/dice_command'
+require_relative 'commands/coin_command'
+require_relative 'mastodon_client'
 
-class CommandParser
-  def initialize(student_id, text, sheet_manager)
-    @student_id = student_id
-    @text = text.strip
-    @sheet = sheet_manager
-  end
+module CommandParser
+  def self.parse(client, sheet_manager, mention)
+    begin
+      content = MastodonClient.clean_content(mention.status.content)
+      sender = mention.account.acct
+      text = content.strip
 
-  def parse
-    case @text
-    when /^구매\/(.+)$/
-      item_name = $1.strip
-      return BuyCommand.new(@student_id, item_name, @sheet).execute
+      case text
+      when /\[구매\/(.+?)\]/
+        item = $1.strip
+        result = BuyCommand.new(sender, item, sheet_manager).execute
 
-    when /^양도\/(.+)\/@(.+)$/
-      item_name, to_id = $1.strip, $2.strip
-      return TransferItemCommand.new(@student_id, "@#{to_id}", item_name, @sheet).execute
+      when /\[양도\/(.+?)\/@(.+?)\]/
+        item = $1.strip
+        to = "@#{$2.strip}"
+        result = TransferItemCommand.new(sender, to, item, sheet_manager).execute
 
-    when /^양도\/갈레온\/@(.+)\/(\d+)$/
-      to_id, amount = $1.strip, $2.to_i
-      return TransferGalleonsCommand.new(@student_id, "@#{to_id}", amount, @sheet).execute
+      when /\[양도\/갈레온\/@(.+?)\/(\d+)\]/
+        to = "@#{$1.strip}"
+        amount = $2.to_i
+        result = TransferGalleonsCommand.new(sender, to, amount, sheet_manager).execute
 
-    when /^주머니$/
-      return PouchCommand.new(@student_id, @sheet).execute
+      when /\[사용\/(.+?)\]/
+        item = $1.strip
+        result = UseItemCommand.new(sender, item, sheet_manager).execute
 
-    when /^사용\/(.+)$/
-      item_name = $1.strip
-      return UseItemCommand.new(@student_id, item_name, @sheet).execute
+      when /\[주머니\]/
+        result = PouchCommand.new(sender, sheet_manager).execute
 
-    when /^타로$/
-      return TarotCommand.new(@student_id).execute
+      when /\[타로\]/
+        tarot_data = sheet_manager.tarot_data  # tarot_data는 SheetManager 또는 상수로부터 불러올 수 있어야 함
+        result = TarotCommand.new(sender, tarot_data, sheet_manager).execute
 
-    when /^베팅\/(\d+)$/
-      amount = $1.to_i
-      return BetCommand.new(@student_id, amount, @sheet).execute
+      when /\[베팅\/(\d+)\]/
+        amount = $1.to_i
+        result = BetCommand.new(sender, amount, sheet_manager).execute
 
-    when /^(\d{1,3})D$/
-      max = $1.to_i
-      return DiceCommand.new(@student_id, max).execute
+      when /\[(\d{1,3})D\]/
+        max = $1.to_i
+        result = DiceCommand.new(sender, max).execute
 
-    when /^동전$/
-      return CoinCommand.new(@student_id).execute
+      when /\[동전\]/
+        result = CoinCommand.new(sender).execute
 
-    else
-      return "알 수 없는 명령어입니다. 올바른 형식으로 다시 입력해 주세요!"
+      else
+        result = "#{sender}님, 알 수 없는 명령어입니다. 다시 확인해 보세요."
+      end
+
+      client.reply(mention.status, result) if result && !result.empty?
+
+    rescue => e
+      puts "[에러] 명령어 처리 실패: #{e.message}"
+      client.reply(mention.status, "무언가 잘못됐단다... 다시 시도해보렴.")
     end
   end
 end
