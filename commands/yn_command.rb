@@ -6,6 +6,6 @@ class YnCommand
   end
 
   def execute
-    ["YES", "NO"].sample
+    ["YES", "NO", "Maybe", "Why not?"].sample
   end
 end
