@@ -153,8 +153,8 @@ def tarot_reading
   place = LUCKY_PLACES.sample
 
   result = []
-  result << "오늘의 타로카드는 #{card}입니다."
-  result << "의미: #{meaning}"
+  result << "오늘의 타로카드는 #{card}"
+  result << "#{meaning}"
   result << "행운의 아이템: #{item}"
   result << "행운의 색깔: #{color}"
   result << "행운의 장소: #{place}"
