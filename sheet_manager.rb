@@ -1,66 +1,112 @@
 # sheet_manager.rb
+
 require 'google_drive'
 
 class SheetManager
-  def initialize(spreadsheet)
-    @spreadsheet = spreadsheet
+  PLAYER_COLUMNS = {
+    id: 1,
+    name: 2,
+    galleons: 3,
+    items: 4,
+    memo: 5,
+    house: 6,
+    last_bet_date: 7,
+    bet_count: 8,
+    attendance_date: 9,
+    last_tarot_date: 10
+  }
+
+  ITEM_COLUMNS = {
+    name: 1,
+    price: 2,
+    description: 4,
+    purchasable: 5,
+    transferable: 6,
+    usable: 7,
+    effect: 8,
+    consumable: 9
+  }
+
+  def initialize(session, spreadsheet_id)
+    @spreadsheet = session.spreadsheet_by_key(spreadsheet_id)
+    @ws_users = @spreadsheet.worksheet_by_title('사용자')
+    @ws_items = @spreadsheet.worksheet_by_title('아이템')
   end
 
-  def worksheet_by_title(title)
-    @spreadsheet.worksheet_by_title(title)
-  end
-
-  # 사용자 시트에서 특정 사용자 정보 반환 (Hash)
-  def get_player(student_id)
-    ws = worksheet_by_title("사용자")
-    (2..ws.num_rows).each do |row|
-      return row_to_hash(ws, row) if ws[row, 1] == student_id
-    end
-    nil
-  end
-
-  # 사용자 정보 갱신
-  def update_player(player_data)
-    ws = worksheet_by_title("사용자")
-    (2..ws.num_rows).each do |row|
-      if ws[row, 1] == player_data["id"]
-        ws[row, 2] = player_data["galleons"]
-        ws[row, 3] = player_data["items"]
-        ws[row, 4] = player_data["debt"]
-        ws.save
-        return true
+  # ================================
+  # 사용자 관련
+  # ================================
+  def get_player(user_id)
+    (2..@ws_users.num_rows).each do |row|
+      if @ws_users[row, PLAYER_COLUMNS[:id]] == user_id
+        return {
+          row: row,
+          id: user_id,
+          name: @ws_users[row, PLAYER_COLUMNS[:name]],
+          galleons: @ws_users[row, PLAYER_COLUMNS[:galleons]].to_i,
+          items: @ws_users[row, PLAYER_COLUMNS[:items]].to_s,
+          memo: @ws_users[row, PLAYER_COLUMNS[:memo]],
+          house: @ws_users[row, PLAYER_COLUMNS[:house]],
+          last_bet_date: @ws_users[row, PLAYER_COLUMNS[:last_bet_date]],
+          bet_count: @ws_users[row, PLAYER_COLUMNS[:bet_count]].to_i,
+          attendance_date: @ws_users[row, PLAYER_COLUMNS[:attendance_date]],
+          last_tarot_date: @ws_users[row, PLAYER_COLUMNS[:last_tarot_date]]
+        }
       end
     end
-    false
+    nil
   end
 
-  # 아이템 시트에서 특정 아이템 정보 반환 (Hash)
+  def update_player_field(row, field_sym, value)
+    col = PLAYER_COLUMNS[field_sym]
+    return unless col
+    @ws_users[row, col] = value
+    @ws_users.save
+  end
+
+  def update_player(player)
+    row = player[:row]
+    PLAYER_COLUMNS.each do |key, col|
+      next unless player.key?(key)
+      @ws_users[row, col] = player[key]
+    end
+    @ws_users.save
+  end
+
+  # ================================
+  # 아이템 관련
+  # ================================
   def get_item(item_name)
-    ws = worksheet_by_title("아이템")
-    (2..ws.num_rows).each do |row|
-      next unless ws[row, 4].to_s.strip.upcase == "TRUE"  # 판매중 여부
-      return row_to_hash(ws, row) if ws[row, 1] == item_name
+    (2..@ws_items.num_rows).each do |row|
+      if @ws_items[row, ITEM_COLUMNS[:name]] == item_name
+        return {
+          row: row,
+          name: item_name,
+          price: @ws_items[row, ITEM_COLUMNS[:price]].to_i,
+          description: @ws_items[row, ITEM_COLUMNS[:description]],
+          purchasable: @ws_items[row, ITEM_COLUMNS[:purchasable]].to_s.strip.upcase == 'TRUE',
+          transferable: @ws_items[row, ITEM_COLUMNS[:transferable]].to_s.strip.upcase == 'TRUE',
+          usable: @ws_items[row, ITEM_COLUMNS[:usable]].to_s.strip.upcase == 'TRUE',
+          effect: @ws_items[row, ITEM_COLUMNS[:effect]],
+          consumable: @ws_items[row, ITEM_COLUMNS[:consumable]].to_s.strip.upcase == 'TRUE'
+        }
+      end
     end
     nil
   end
 
-  # 타로 텍스트 불러오기
-  def tarot_data
-    ws = worksheet_by_title("타로로그")
-    data = {}
-    (2..ws.num_rows).each do |row|
-      card = ws[row, 1]
-      meaning = ws[row, 2]
-      data[card] = meaning
-    end
-    data
+  # ================================
+  # 인벤토리 처리
+  # ================================
+  def add_item_to_inventory(items_str, item_name)
+    items = items_str.to_s.split(',').map(&:strip)
+    items << item_name
+    items.join(',')
   end
 
-  private
-
-  # 한 행을 헤더 기반 Hash로 변환
-  def row_to_hash(ws, row)
-    headers = ws.rows.first
-    Hash[headers.each_with_index.map { |h, i| [h.strip, ws[row, i + 1]] }]
+  def remove_item_from_inventory(items_str, item_name)
+    items = items_str.to_s.split(',').map(&:strip)
+    items.delete(item_name)
+    items.join(',')
   end
 end
