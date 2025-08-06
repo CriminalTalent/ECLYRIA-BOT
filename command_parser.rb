@@ -39,7 +39,7 @@ module CommandParser
         result = PouchCommand.new(sender, sheet_manager).execute
 
       when /\[타로\]/
-        tarot_data = sheet_manager.tarot_data  # tarot_data는 SheetManager 또는 상수로부터 불러올 수 있어야 함
+        tarot_data = sheet_manager.tarot_data
         result = TarotCommand.new(sender, tarot_data, sheet_manager).execute
 
       when /\[베팅\/(\d+)\]/
@@ -61,7 +61,7 @@ module CommandParser
 
     rescue => e
       puts "[에러] 명령어 처리 실패: #{e.message}"
-      client.reply(mention.status, "무언가 잘못됐단다... 다시 시도해보렴.")
+      puts e.backtrace.first(5).join("\n")
     end
   end
 end
