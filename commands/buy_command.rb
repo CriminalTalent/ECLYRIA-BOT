@@ -2,7 +2,7 @@
 class BuyCommand
   def initialize(student_id, item_name, sheet)
     @student_id = student_id
-    @item_name = item_name
+    @item_name = item_name.strip
     @sheet = sheet
   end
 
@@ -15,7 +15,11 @@ class BuyCommand
     end
 
     item = @sheet.get_item(@item_name)
-    return "‘#{@item_name}’이라는 물건은 상점에 없단다!" unless item
+    return nil unless item  # 아이템 없음 → 조용히 무시
+
+    unless item["구매가능"].to_s.strip.downcase == "true"
+      return nil  # 구매 불가 아이템 → 조용히 무시
+    end
 
     price = item["price"].to_i
     galleons = player["galleons"].to_i
