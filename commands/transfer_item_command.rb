@@ -8,16 +8,23 @@ class TransferItemCommand
   end
 
   def execute
-    return "자기 자신에게는 물건을 양도할 수 없단다!" if @from_id == @to_id
+    return nil if @from_id == @to_id
 
     from = @sheet.get_player(@from_id)
     to = @sheet.get_player(@to_id)
 
-    return "보내는 사람(#{@from_id}) 정보를 찾을 수 없단다!" unless from
-    return "받는 사람(#{@to_id}) 정보를 찾을 수 없단다!" unless to
+    return nil unless from && to
 
     from_items = from["items"].to_s.split(",").map(&:strip)
     return "‘#{@item_name}’은(는) 네 소지품에 없단다!" unless from_items.include?(@item_name)
+
+    item = @sheet.get_item(@item_name)
+    return nil unless item
+
+
+    unless item["양도가능"].to_s.downcase == "true"
+      return nil 
+    end
 
     # 아이템 이동 처리
     from_items.delete(@item_name)
@@ -27,6 +34,6 @@ class TransferItemCommand
     from["items"] = from_items.join(",")
     to["items"] = to_items.join(",")
 
-    return "'#{@item_name}'을(를) #{@to_id}학생에게 양도 완료"
+    return "'#{@item_name}'을(를) #{@to_id}학생에게 양도"
   end
 end
