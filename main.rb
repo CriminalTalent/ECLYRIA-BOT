@@ -1,6 +1,7 @@
 # main.rb
 require 'dotenv/load'
-require 'google_drive'
+require 'google/apis/sheets_v4'
+require 'googleauth'
 require_relative 'mastodon_client'
 require_relative 'command_parser'
 require_relative 'sheet_manager'
@@ -11,14 +12,24 @@ unless MastodonClient.validate_environment
 end
 
 begin
-  session = GoogleDrive::Session.from_service_account_key("credentials.json")
-  spreadsheet = session.spreadsheet_by_key(ENV["GOOGLE_SHEET_ID"])
+  sheets_service = Google::Apis::SheetsV4::SheetsService.new
+  
+  credentials = Google::Auth::ServiceAccountCredentials.make_creds(
+    json_key_io: File.open('credentials.json'),
+    scope: 'https://www.googleapis.com/auth/spreadsheets'
+  )
+  credentials.fetch_access_token!
+  sheets_service.authorization = credentials
+  
+  spreadsheet = sheets_service.get_spreadsheet(ENV["GOOGLE_SHEET_ID"])
+  puts "Google Sheets 연결 성공: #{spreadsheet.properties.title}"
+  
 rescue => e
   puts "Google Sheets 연결 실패: #{e.message}"
   exit
 end
 
-sheet_manager = SheetManager.new(spreadsheet)
+sheet_manager = SheetManager.new(sheets_service, ENV["GOOGLE_SHEET_ID"])
 client = MastodonClient.client
 
 client.stream_user do |event|
