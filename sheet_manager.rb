@@ -1,6 +1,5 @@
 # sheet_manager.rb
-
-require 'google_drive'
+require 'google/apis/sheets_v4'
 
 class SheetManager
   PLAYER_COLUMNS = {
@@ -27,32 +26,37 @@ class SheetManager
     consumable: 9
   }
 
-  def initialize(session, spreadsheet_id)
-    @spreadsheet = session.spreadsheet_by_key(spreadsheet_id)
-    @ws_users = @spreadsheet.worksheet_by_title('사용자')
-    @ws_items = @spreadsheet.worksheet_by_title('아이템')
+  def initialize(sheets_service, spreadsheet_id)
+    @service = sheets_service
+    @spreadsheet_id = spreadsheet_id
   end
 
-  # ================================
-  # 사용자 관련
-  # ================================
   def get_player(user_id)
-    (2..@ws_users.num_rows).each do |row|
-      if @ws_users[row, PLAYER_COLUMNS[:id]] == user_id
-        return {
-          row: row,
-          id: user_id,
-          name: @ws_users[row, PLAYER_COLUMNS[:name]],
-          galleons: @ws_users[row, PLAYER_COLUMNS[:galleons]].to_i,
-          items: @ws_users[row, PLAYER_COLUMNS[:items]].to_s,
-          memo: @ws_users[row, PLAYER_COLUMNS[:memo]],
-          house: @ws_users[row, PLAYER_COLUMNS[:house]],
-          last_bet_date: @ws_users[row, PLAYER_COLUMNS[:last_bet_date]],
-          bet_count: @ws_users[row, PLAYER_COLUMNS[:bet_count]].to_i,
-          attendance_date: @ws_users[row, PLAYER_COLUMNS[:attendance_date]],
-          last_tarot_date: @ws_users[row, PLAYER_COLUMNS[:last_tarot_date]]
-        }
+    range = "사용자!A:J"
+    begin
+      response = @service.get_spreadsheet_values(@spreadsheet_id, range)
+      values = response.values || []
+      
+      values.each_with_index do |row, index|
+        next if index == 0 # 헤더 스킵
+        if row[0] == user_id
+          return {
+            row: index + 1,
+            id: user_id,
+            name: row[1],
+            galleons: (row[2] || 0).to_i,
+            items: (row[3] || "").to_s,
+            memo: row[4],
+            house: row[5],
+            last_bet_date: row[6],
+            bet_count: (row[7] || 0).to_i,
+            attendance_date: row[8],
+            last_tarot_date: row[9]
+          }
+        end
       end
+    rescue => e
+      puts "플레이어 조회 오류: #{e.message}"
     end
     nil
   end
@@ -60,44 +64,83 @@ class SheetManager
   def update_player_field(row, field_sym, value)
     col = PLAYER_COLUMNS[field_sym]
     return unless col
-    @ws_users[row, col] = value
-    @ws_users.save
+    
+    range = "사용자!#{('A'.ord + col - 1).chr}#{row + 1}"
+    value_range = Google::Apis::SheetsV4::ValueRange.new
+    value_range.values = [[value]]
+    
+    begin
+      @service.update_spreadsheet_value(
+        @spreadsheet_id,
+        range,
+        value_range,
+        value_input_option: 'RAW'
+      )
+    rescue => e
+      puts "플레이어 필드 업데이트 오류: #{e.message}"
+    end
   end
 
   def update_player(player)
     row = player[:row]
-    PLAYER_COLUMNS.each do |key, col|
-      next unless player.key?(key)
-      @ws_users[row, col] = player[key]
+    range = "사용자!A#{row + 1}:J#{row + 1}"
+    
+    values = [
+      player[:id],
+      player[:name],
+      player[:galleons],
+      player[:items],
+      player[:memo],
+      player[:house],
+      player[:last_bet_date],
+      player[:bet_count],
+      player[:attendance_date],
+      player[:last_tarot_date]
+    ]
+    
+    value_range = Google::Apis::SheetsV4::ValueRange.new
+    value_range.values = [values]
+    
+    begin
+      @service.update_spreadsheet_value(
+        @spreadsheet_id,
+        range,
+        value_range,
+        value_input_option: 'RAW'
+      )
+    rescue => e
+      puts "플레이어 업데이트 오류: #{e.message}"
     end
-    @ws_users.save
   end
 
-  # ================================
-  # 아이템 관련
-  # ================================
   def get_item(item_name)
-    (2..@ws_items.num_rows).each do |row|
-      if @ws_items[row, ITEM_COLUMNS[:name]] == item_name
-        return {
-          row: row,
-          name: item_name,
-          price: @ws_items[row, ITEM_COLUMNS[:price]].to_i,
-          description: @ws_items[row, ITEM_COLUMNS[:description]],
-          purchasable: @ws_items[row, ITEM_COLUMNS[:purchasable]].to_s.strip.upcase == 'TRUE',
-          transferable: @ws_items[row, ITEM_COLUMNS[:transferable]].to_s.strip.upcase == 'TRUE',
-          usable: @ws_items[row, ITEM_COLUMNS[:usable]].to_s.strip.upcase == 'TRUE',
-          effect: @ws_items[row, ITEM_COLUMNS[:effect]],
-          consumable: @ws_items[row, ITEM_COLUMNS[:consumable]].to_s.strip.upcase == 'TRUE'
-        }
+    range = "아이템!A:I"
+    begin
+      response = @service.get_spreadsheet_values(@spreadsheet_id, range)
+      values = response.values || []
+      
+      values.each_with_index do |row, index|
+        next if index == 0 # 헤더 스킵
+        if row[0] == item_name
+          return {
+            row: index + 1,
+            name: item_name,
+            price: (row[1] || 0).to_i,
+            description: row[3],
+            purchasable: (row[4] || "").to_s.strip.upcase == 'TRUE',
+            transferable: (row[5] || "").to_s.strip.upcase == 'TRUE',
+            usable: (row[6] || "").to_s.strip.upcase == 'TRUE',
+            effect: row[7],
+            consumable: (row[8] || "").to_s.strip.upcase == 'TRUE'
+          }
+        end
       end
+    rescue => e
+      puts "아이템 조회 오류: #{e.message}"
     end
     nil
   end
 
-  # ================================
-  # 인벤토리 처리
-  # ================================
   def add_item_to_inventory(items_str, item_name)
     items = items_str.to_s.split(',').map(&:strip)
     items << item_name
