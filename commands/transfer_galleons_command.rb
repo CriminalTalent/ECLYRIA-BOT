@@ -17,19 +17,21 @@ class TransferGalleonsCommand
     return "받는 사람(#{@to_id}) 정보가 없단다!" unless to
     return "자기 자신에게는 갈레온을 양도할 수 없단다!" if @from_id == @to_id
 
-    if from["galleons"].to_i < 0
+    if from[:galleons].to_i < 0
       return "갈레온이 마이너스 상태라 양도는 불가능하단다."
     end
 
-    if from["galleons"].to_i < @amount
+    if from[:galleons].to_i < @amount
       return "갈레온이 부족하단다."
     end
 
     # 양도 처리
-    from["galleons"] -= @amount
-    to["galleons"]   += @amount
+    from[:galleons] -= @amount
+    to[:galleons]   += @amount
 
-    return "#{@amount}갈레온을 #{@to_id}학생에게 양도\n현재 잔액 #{from["galleons"]}갈레온"
+    @sheet.update_player(from)
+    @sheet.update_player(to)
+
+    return "#{@amount}갈레온을 #{@to_id}학생에게 양도\n현재 잔액 #{from[:galleons]}갈레온"
   end
 end
-
