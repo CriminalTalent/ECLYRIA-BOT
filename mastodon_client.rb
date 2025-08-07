@@ -1,35 +1,44 @@
+# mastodon_client.rb
 require 'mastodon'
 require 'json'
 require 'dotenv'
 Dotenv.load('.env')
 
-module MastodonClient
-  BASE_URL = ENV['MASTODON_BASE_URL']
-  TOKEN = ENV['MASTODON_TOKEN']
-
-  def self.client
-    @client ||= Mastodon::REST::Client.new(
-      base_url: BASE_URL, 
-      bearer_token: TOKEN
+class MastodonClient
+  def initialize
+    @base_url = ENV['MASTODON_BASE_URL']
+    @token = ENV['MASTODON_TOKEN']
+    @client = Mastodon::REST::Client.new(
+      base_url: @base_url,
+      bearer_token: @token
+    )
+    @streamer = Mastodon::Streaming::Client.new(
+      base_url: @base_url,
+      bearer_token: @token
     )
   end
 
-  def self.test_connection
-    begin
-      me = client.verify_credentials
-      puts "마스토돈 계정 확인 완료: @#{me.acct}"
-      puts "서버: #{BASE_URL}"
-      true
-    rescue => e
-      puts "마스토돈 연결 실패: #{e.message}"
-      false
-    end
+  def self.client
+    @instance ||= new
   end
 
-  def self.reply(to_status, message)
+  def stream_user(&block)
+    puts "멘션 스트리밍 시작..."
+    @streamer.user do |event|
+      if event.is_a?(Mastodon::Notification) && event.type == 'mention'
+        block.call(event)
+      end
+    end
+  rescue => e
+    puts "스트리밍 중단됨: #{e.message}"
+    sleep 5
+    retry
+  end
+
+  def reply(to_status, message)
     begin
-      response = client.create_status(
-        "@#{to_status.account.acct} #{message}", 
+      response = @client.create_status(
+        "@#{to_status.account.acct} #{message}",
         {
           in_reply_to_id: to_status.id,
           visibility: 'public'
@@ -43,73 +52,13 @@ module MastodonClient
     end
   end
 
-  def self.post_status(message, options = {})
-    begin
-      response = client.create_status(message, options)
-      puts "상태 게시 완료"
-      response
-    rescue => e
-      puts "상태 게시 실패: #{e.message}"
-      nil
-    end
-  end
-
-  def self.get_mentions(since_id = nil, limit = 10)
-    begin
-      options = { limit: limit }
-      options[:since_id] = since_id if since_id
-      
-      notifications = client.notifications(options)
-      mentions = notifications.select { |n| n.type == 'mention' }
-      
-      puts "멘션 #{mentions.size}개 수신" if mentions.size > 0
-      mentions
-    rescue => e
-      puts "멘션 수신 실패: #{e.message}"
-      []
-    end
-  end
-
-  def self.stream_mentions(since_id = nil)
-    puts "멘션 스트리밍 시작..."
-    current_since_id = since_id
-    
-    loop do
-      begin
-        mentions = get_mentions(current_since_id)
-        
-        mentions.each do |mention|
-          yield mention if block_given?
-          current_since_id = [current_since_id.to_i, mention.id.to_i].max.to_s
-        end
-        
-        sleep 10
-      rescue => e
-        puts "스트리밍 에러: #{e.message}"
-        puts "30초 후 재시도..."
-        sleep 30
-      end
-    end
-  end
-
-  def self.get_account_info(username)
-    begin
-      account = client.search(username, resolve: true)[:accounts].first
-      return account
-    rescue => e
-      puts "계정 정보 조회 실패: #{e.message}"
-      nil
-    end
-  end
-
-  def self.clean_content(content)
-    content.gsub(/<[^>]*>/, '').strip
-  end
-
   def self.validate_environment
+    base_url = ENV['MASTODON_BASE_URL']
+    token = ENV['MASTODON_TOKEN']
+    
     missing_vars = []
-    missing_vars << 'MASTODON_BASE_URL' if BASE_URL.nil? || BASE_URL.empty?
-    missing_vars << 'MASTODON_TOKEN' if TOKEN.nil? || TOKEN.empty?
+    missing_vars << 'MASTODON_BASE_URL' if base_url.nil? || base_url.empty?
+    missing_vars << 'MASTODON_TOKEN' if token.nil? || token.empty?
     
     if missing_vars.any?
       puts "필수 환경변수 누락: #{missing_vars.join(', ')}"
