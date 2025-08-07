@@ -10,28 +10,27 @@ class UseItemCommand
     player = @sheet.get_player(@student_id)
     return "학적부에 없는 학생이구나, 교수님께 가보렴." unless player
 
-    inventory = player["items"].to_s.split(",").map(&:strip)
-
+    inventory = player[:items].to_s.split(",").map(&:strip)
     unless inventory.include?(@item_name)
-      return "‘#{@item_name}’은(는) 네 소지품에 없단다."
+      return "'#{@item_name}'은(는) 네 소지품에 없단다."
     end
 
     item = @sheet.get_item(@item_name)
-    return "‘#{@item_name}’이라는 물건을 찾을 수 없단다." unless item
+    return "'#{@item_name}'이라는 물건을 찾을 수 없단다." unless item
 
-    unless item["사용가능"].to_s.downcase == "true"
-      return "‘#{@item_name}’은(는) 사용할 수 없는 물건이란다!"
+    unless item[:usable]
+      return "'#{@item_name}'은(는) 사용할 수 없는 물건이란다!"
     end
 
-    effect_message = item["효과"].to_s.strip
-    effect_message = "‘#{@item_name}’을(를) 사용!" if effect_message.empty?
+    effect_message = item[:effect].to_s.strip
+    effect_message = "'#{@item_name}'을(를) 사용!" if effect_message.empty?
 
-    if item["사용시삭제"].to_s.downcase == "true"
+    if item[:consumable]
       inventory.delete(@item_name)
-      player["items"] = inventory.join(",")
+      player[:items] = inventory.join(",")
+      @sheet.update_player(player)
     end
 
     return "#{effect_message}"
   end
 end
-
