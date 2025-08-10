@@ -155,12 +155,9 @@ module CommandParser
         message = BetCommand.new(sender, amount, sheet_manager).execute
         mastodon_client.reply(mention.status, message) if message
         
-      when /\[100D\]/
-        message = DiceCommand.new(sender, 100).execute
-        mastodon_client.reply(mention.status, message) if message
-        
-      when /\[20D\]/
-        message = DiceCommand.new(sender, 20).execute
+      when /\[(\d+)D\]/
+        sides = $1.to_i
+        message = DiceCommand.new(sender, sides).execute
         mastodon_client.reply(mention.status, message) if message
         
       when /\[동전\]/
