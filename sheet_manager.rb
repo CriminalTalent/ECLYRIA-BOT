@@ -32,6 +32,9 @@ class SheetManager
   end
 
   def get_player(user_id)
+    # user_id에서 @ 제거 (일관성을 위해)
+    clean_user_id = user_id.gsub('@', '')
+    
     range = "사용자!A:J"
     begin
       response = @service.get_spreadsheet_values(@spreadsheet_id, range)
@@ -39,10 +42,12 @@ class SheetManager
       
       values.each_with_index do |row, index|
         next if index == 0 # 헤더 스킵
-        if row[0] == user_id
+        # ID 필드에서 @ 제거해서 비교
+        row_id = (row[0] || "").gsub('@', '')
+        if row_id == clean_user_id
           return {
             row: index + 1,
-            id: user_id,
+            id: clean_user_id,
             name: row[1],
             galleons: (row[2] || 0).to_i,
             items: (row[3] || "").to_s,
@@ -76,6 +81,7 @@ class SheetManager
         value_range,
         value_input_option: 'RAW'
       )
+      puts "[DEBUG] 필드 업데이트 완료: 행#{row+1}, #{field_sym} = #{value}"
     rescue => e
       puts "플레이어 필드 업데이트 오류: #{e.message}"
     end
@@ -102,14 +108,18 @@ class SheetManager
     value_range.values = [values]
     
     begin
-      @service.update_spreadsheet_value(
+      result = @service.update_spreadsheet_value(
         @spreadsheet_id,
         range,
         value_range,
         value_input_option: 'RAW'
       )
+      puts "[DEBUG] 플레이어 업데이트 완료: #{player[:id]}, 갈레온: #{player[:galleons]}"
+      result
     rescue => e
       puts "플레이어 업데이트 오류: #{e.message}"
+      puts e.backtrace.first(3)
+      nil
     end
   end
 
@@ -151,5 +161,25 @@ class SheetManager
     items = items_str.to_s.split(',').map(&:strip)
     items.delete(item_name)
     items.join(',')
+  end
+
+  # 구 메서드들과의 호환성을 위한 추가 메서드들
+  def read_values(range)
+    @service.get_spreadsheet_values(@spreadsheet_id, range).values
+  rescue => e
+    puts "시트 읽기 오류: #{e.message}"
+    []
+  end
+
+  def update_values(range, values)
+    puts "[DEBUG] 업데이트 시도: 범위=#{range}, 값=#{values.inspect}"
+    value_range = Google::Apis::SheetsV4::ValueRange.new(values: values)
+    result = @service.update_spreadsheet_value(@spreadsheet_id, range, value_range, value_input_option: 'USER_ENTERED')
+    puts "[DEBUG] 업데이트 결과: #{result.updated_cells}개 셀 업데이트됨"
+    result
+  rescue => e
+    puts "시트 쓰기 오류: #{e.message}"
+    puts e.backtrace.first(3)
+    nil
   end
 end
