@@ -6,12 +6,11 @@ class DiceCommand
   end
 
   def execute
-    if @max < 2 || @max > 100
-      return "주사위는 2 이상 100 이하 숫자까지만 가능하단다~"
+    if @max < 1 || @max > 100
+      return "주사위는 1 이상 100 이하 숫자까지만 가능하단다~"
     end
 
     result = rand(1..@max)
     return "#{result}"
   end
 end
-
