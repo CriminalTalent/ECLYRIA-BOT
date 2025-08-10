@@ -38,16 +38,13 @@ class TarotCommand
     puts "[DEBUG] 타로 카드 뽑기 완료: #{@student_id} - #{card}"
 
     return <<~TEXT.strip
-      신비로운 운세
-      
       [#{card}]
       #{meaning}
       
       행운의 아이템: #{lucky_item}
       행운의 색: #{lucky_color}
       행운의 장소: #{lucky_place}
-      
-      언제든 다시 뽑아도 된단다~
+
     TEXT
   end
 end
