@@ -19,21 +19,15 @@ class TarotCommand
       return "학적부에 없는 학생이구나, 교수님께 가보렴."
     end
 
-    last_date = player[:last_tarot_date].to_s
-    today = Date.today.to_s
-
-    if last_date == today
-      return "오늘은 이미 타로 카드를 뽑았단다~ 내일 다시 와줘!"
-    end
-
-    # 타로카드 뽑기
+    # 타로카드 뽑기 (제한 없음)
     card = @tarot_data.keys.sample
     meaning = @tarot_data[card]
     lucky_item  = LUCKY_ITEMS.sample
     lucky_color = LUCKY_COLORS.sample
     lucky_place = LUCKY_PLACES.sample
 
-    # 날짜 기록
+    # 마지막 타로 날짜만 기록 (제한 목적이 아닌 통계 목적)
+    today = Date.today.to_s
     player[:last_tarot_date] = today
     update_result = @sheet_manager.update_player(player)
     unless update_result
@@ -44,7 +38,7 @@ class TarotCommand
     puts "[DEBUG] 타로 카드 뽑기 완료: #{@student_id} - #{card}"
 
     return <<~TEXT.strip
-      ✨ 오늘의 운세 ✨
+      ✨ 신비로운 운세 ✨
       
       [#{card}]
       #{meaning}
@@ -53,7 +47,7 @@ class TarotCommand
       🌈 행운의 색: #{lucky_color}
       📍 행운의 장소: #{lucky_place}
       
-      좋은 하루 되길 바란다~ ✨
+      언제든 다시 뽑아도 된단다~ ✨
     TEXT
   end
 end
