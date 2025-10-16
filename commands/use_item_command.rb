@@ -1,36 +1,42 @@
+# ============================================
 # commands/use_item_command.rb
+# ============================================
 class UseItemCommand
-  def initialize(student_id, item_name, sheet)
-    @student_id = student_id
+  def initialize(student_id, item_name, sheet_manager)
+    @student_id = student_id.gsub('@', '')
     @item_name = item_name.strip
-    @sheet = sheet
+    @sheet_manager = sheet_manager
   end
 
   def execute
-    player = @sheet.get_player(@student_id)
-    return "학적부에 없는 학생이구나, 교수님께 가보렴." unless player
+    player = @sheet_manager.find_user(@student_id)
+    unless player
+      return "어머, 손님이 누구시더라? 입학부터 하고 오세요~"
+    end
 
     inventory = player[:items].to_s.split(",").map(&:strip)
     unless inventory.include?(@item_name)
-      return "'#{@item_name}'은(는) 네 소지품에 없단다."
+      return "어? #{@item_name}은(는) 안 가지고 계신 것 같은데요?"
     end
 
-    item = @sheet.get_item(@item_name)
-    return "'#{@item_name}'이라는 물건을 찾을 수 없단다." unless item
+    item = @sheet_manager.get_item(@item_name)
+    unless item
+      return "어머나, 그 물건 정보가 없네요?"
+    end
 
     unless item[:usable]
-      return "'#{@item_name}'은(는) 사용할 수 없는 물건이란다!"
+      return "아이고, 그건 사용하는 게 아니에요!"
     end
 
-    effect_message = item[:effect].to_s.strip
-    effect_message = "'#{@item_name}'을(를) 사용!" if effect_message.empty?
-
+    # 소모품이면 제거
     if item[:consumable]
       inventory.delete(@item_name)
-      player[:items] = inventory.join(",")
-      @sheet.update_player(player)
+      @sheet_manager.update_user(@student_id, { items: inventory.join(",") })
     end
 
-    return "#{effect_message}"
+    effect = item[:effect].to_s.strip
+    effect = "#{@item_name} 사용했어요!" if effect.empty?
+
+    return effect
   end
 end
