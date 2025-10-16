@@ -1,12 +1,12 @@
-
+# ============================================
 # commands/coin_command.rb
+# ============================================
 class CoinCommand
   def initialize(student_id)
-    @student_id = student_id
+    @student_id = student_id.gsub('@', '')
   end
 
   def execute
-    result = ["앞면", "뒷면"].sample
-    return "#{result}"
+    return ["앞", "뒤"].sample
   end
 end
