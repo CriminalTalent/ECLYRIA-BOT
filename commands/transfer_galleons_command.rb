@@ -1,59 +1,40 @@
+# ============================================
 # commands/transfer_galleons_command.rb
+# ============================================
 class TransferGalleonsCommand
-  def initialize(from_id, to_id, amount, sheet_manager)
-    @from_id = from_id
-    @to_id = to_id
-    @amount = amount.to_i
+  def initialize(sender, receiver, amount, sheet_manager)
+    @sender = sender.gsub('@', '')
+    @receiver = receiver.gsub('@', '')
+    @amount = amount
     @sheet_manager = sheet_manager
   end
 
   def execute
-    return "양도할 갈레온 수는 1 갈레온 이상이어야 한단다." if @amount <= 0
-
-    from = @sheet_manager.get_player(@from_id)
-    to   = @sheet_manager.get_player(@to_id)
-
-    unless from
-      puts "[DEBUG] 보내는 사람 찾을 수 없음: #{@from_id}"
-      return "보내는 사람(#{@from_id}) 정보가 없단다!"
-    end
-    
-    unless to
-      puts "[DEBUG] 받는 사람 찾을 수 없음: #{@to_id}"
-      return "받는 사람(#{@to_id}) 정보가 없단다!"
-    end
-    
-    return "자기 자신에게는 갈레온을 양도할 수 없단다!" if @from_id == @to_id
-
-    if from[:galleons].to_i < 0
-      return "갈레온이 마이너스 상태라 양도는 불가능하단다."
+    sender_user = @sheet_manager.find_user(@sender)
+    unless sender_user
+      return "어머, 손님이 누구시더라? 입학부터 하고 오세요~"
     end
 
-    if from[:galleons].to_i < @amount
-      return "갈레온이 부족하단다. 가진 갈레온은 #{from[:galleons]}뿐이야."
+    if sender_user[:galleons].to_i < 0
+      return "어머머, 빚쟁이는 돈 못 보내요! 갈레온부터 갚고 오세요~"
     end
 
-    # 양도 처리
-    original_from_galleons = from[:galleons]
-    original_to_galleons = to[:galleons]
-    
-    from[:galleons] = original_from_galleons - @amount
-    to[:galleons] = original_to_galleons + @amount
-
-    # 두 플레이어 모두 업데이트
-    from_result = @sheet_manager.update_player(from)
-    to_result = @sheet_manager.update_player(to)
-    
-    unless from_result && to_result
-      puts "[ERROR] 갈레온 양도 업데이트 실패"
-      # 롤백 시도
-      from[:galleons] = original_from_galleons
-      to[:galleons] = original_to_galleons
-      return "갈레온 양도 처리 중 오류가 발생했습니다."
+    receiver_user = @sheet_manager.find_user(@receiver)
+    unless receiver_user
+      return "어머나, 받는 사람이 학교에 없는 것 같은데요?"
     end
 
-    puts "[DEBUG] 갈레온 양도 완료: #{@from_id}(#{original_from_galleons}→#{from[:galleons]}) → #{@to_id}(#{original_to_galleons}→#{to[:galleons]})"
+    if sender_user[:galleons].to_i < @amount
+      return "어? 갈레온이 부족한데요? 지금 #{sender_user[:galleons]}개밖에 없잖아요~"
+    end
 
-    return "#{@amount}갈레온을 #{@to_id}학생에게 양도했단다.\n현재 잔액 #{from[:galleons]}갈레온"
+    # 송금 처리
+    new_sender = sender_user[:galleons].to_i - @amount
+    new_receiver = receiver_user[:galleons].to_i + @amount
+
+    @sheet_manager.update_user(@sender, { galleons: new_sender })
+    @sheet_manager.update_user(@receiver, { galleons: new_receiver })
+
+    return "#{@amount}갈레온 잘 보냈어요! @#{@receiver}님한테 줬어요~ 남은 돈은 #{new_sender}갈레온!"
   end
 end
