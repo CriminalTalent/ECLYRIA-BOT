@@ -1,40 +1,38 @@
+# ============================================
 # commands/transfer_item_command.rb
+# ============================================
 class TransferItemCommand
-  def initialize(from_id, to_id, item_name, sheet)
-    @from_id = from_id
-    @to_id = to_id
+  def initialize(sender, receiver, item_name, sheet_manager)
+    @sender = sender.gsub('@', '')
+    @receiver = receiver.gsub('@', '')
     @item_name = item_name.strip
-    @sheet = sheet
+    @sheet_manager = sheet_manager
   end
 
   def execute
-    return nil if @from_id == @to_id
-
-    from = @sheet.get_player(@from_id)
-    to = @sheet.get_player(@to_id)
-    return nil unless from && to
-
-    from_items = from[:items].to_s.split(",").map(&:strip)
-    return "'#{@item_name}'은(는) 네 소지품에 없단다!" unless from_items.include?(@item_name)
-
-    item = @sheet.get_item(@item_name)
-    return nil unless item
-
-    unless item[:transferable]
-      return nil 
+    sender_user = @sheet_manager.find_user(@sender)
+    unless sender_user
+      return "어머, 손님이 누구시더라? 입학부터 하고 오세요~"
     end
 
-    # 아이템 이동 처리
-    from_items.delete(@item_name)
-    to_items = to[:items].to_s.split(",").map(&:strip)
-    to_items << @item_name
+    receiver_user = @sheet_manager.find_user(@receiver)
+    unless receiver_user
+      return "어머나, 받는 사람이 학교에 없는 것 같은데요?"
+    end
 
-    from[:items] = from_items.join(",")
-    to[:items] = to_items.join(",")
+    inventory = sender_user[:items].to_s.split(",").map(&:strip)
+    unless inventory.include?(@item_name)
+      return "어? #{@item_name}은(는) 안 가지고 계신 것 같은데요?"
+    end
 
-    @sheet.update_player(from)
-    @sheet.update_player(to)
+    # 양도 처리
+    inventory.delete(@item_name)
+    receiver_inventory = receiver_user[:items].to_s.split(",").map(&:strip)
+    receiver_inventory << @item_name
 
-    return "'#{@item_name}'을(를) #{@to_id}학생에게 양도"
+    @sheet_manager.update_user(@sender, { items: inventory.join(",") })
+    @sheet_manager.update_user(@receiver, { items: receiver_inventory.join(",") })
+
+    return "#{@item_name} 잘 전달했어요! @#{@receiver}님한테 줬어요~"
   end
 end
