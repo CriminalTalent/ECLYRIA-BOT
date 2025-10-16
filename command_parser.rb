@@ -101,12 +101,14 @@ module CommandParser
     "KING OF PENTACLES" => "물질적 성공과 안정을 이룬 상태입니다. 풍부한 경험과 지혜로 다른 이들을 도울 수 있습니다."
   }
 
-  def self.parse(mastodon_client, sheet_manager, mention)
+ def self.parse(mastodon_client, sheet_manager, mention)
     begin
       content = mention.status.content.gsub(/<[^>]*>/, '').strip
       sender_full = mention.account.acct
       
-      # sender ID 정규화 (@domain 부분 제거)
+      # sender ID 정규화 - 다른 서버 호환성을 위해 도메인 부분 제거
+      # 예: "Store@fortunaefons.masto.host" → "Store"
+      # 예: "professor@eclyria.pics" → "professor"
       sender = sender_full.split('@').first
       
       puts "[상점봇] 처리 중: #{content} (from @#{sender_full} -> #{sender})"
@@ -127,13 +129,17 @@ module CommandParser
         
       when /\[양도\/(.+?)\/@(.+?)\]/
         item_name = $1.strip
-        receiver = $2.strip
+        receiver_full = $2.strip
+        # receiver도 도메인 제거 (@ 이후 부분 제거)
+        receiver = receiver_full.split('@').first
         message = TransferItemCommand.new(sender, receiver, item_name, sheet_manager).execute
         mastodon_client.reply(mention.status, message) if message
         
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/
         amount = $1.to_i
-        receiver = $2.strip
+        receiver_full = $2.strip
+        # receiver도 도메인 제거 (@ 이후 부분 제거)
+        receiver = receiver_full.split('@').first
         message = TransferGalleonsCommand.new(sender, receiver, amount, sheet_manager).execute
         mastodon_client.reply(mention.status, message) if message
         
