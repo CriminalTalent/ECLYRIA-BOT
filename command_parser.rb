@@ -101,83 +101,77 @@ module CommandParser
     "KING OF PENTACLES" => "물질적 성공과 안정을 이룬 상태입니다. 풍부한 경험과 지혜로 다른 이들을 도울 수 있습니다."
   }
 
- def self.parse(mastodon_client, sheet_manager, mention)
+  def self.parse(mastodon_client, sheet_manager, mention)
     begin
       content = mention.status.content.gsub(/<[^>]*>/, '').strip
       sender_full = mention.account.acct
       
       # sender ID 정규화 - 다른 서버 호환성을 위해 도메인 부분 제거
-      # 예: "Store@fortunaefons.masto.host" → "Store"
-      # 예: "professor@eclyria.pics" → "professor"
       sender = sender_full.split('@').first
       
       puts "[상점봇] 처리 중: #{content} (from @#{sender_full} -> #{sender})"
       
-      # 사용자 확인
       user = sheet_manager.get_player(sender)
       unless user
         puts "[무시] 학적부에 없는 사용자: #{sender}"
         return
       end
 
-      # 명령어 라우팅
       case content
       when /\[구매\/(.+?)\]/
         item_name = $1.strip
         message = BuyCommand.new(sender, item_name, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[양도\/(.+?)\/@(.+?)\]/
         item_name = $1.strip
         receiver_full = $2.strip
-        # receiver도 도메인 제거 (@ 이후 부분 제거)
         receiver = receiver_full.split('@').first
         message = TransferItemCommand.new(sender, receiver, item_name, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/
         amount = $1.to_i
         receiver_full = $2.strip
-        # receiver도 도메인 제거 (@ 이후 부분 제거)
         receiver = receiver_full.split('@').first
         message = TransferGalleonsCommand.new(sender, receiver, amount, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[사용\/(.+?)\]/
         item_name = $1.strip
         message = UseItemCommand.new(sender, item_name, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[주머니\]/
         message = PouchCommand.new(sender, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[타로\]/
         message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[베팅\/(\d+)\]/
         amount = $1.to_i
         message = BetCommand.new(sender, amount, sheet_manager).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[(\d+)D\]/
         sides = $1.to_i
         message = DiceCommand.new(sender, sides).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[동전\]/
         message = CoinCommand.new(sender).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       when /\[YN\]/i
         message = YnCommand.new(sender).execute
-        mastodon_client.reply(mention.status, message) if message
-        
+        mastodon_client.reply(mention, message) if message
+
       else
         puts "[무시] 인식되지 않은 명령어: #{content}"
       end
-      
+
     rescue => e
       puts "[에러] 명령어 처리 실패: #{e.message}"
       puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
