@@ -13,7 +13,7 @@ class MastodonClient
       base_url: base_url,
       bearer_token: token
     )
-    
+
     # Streaming 클라이언트 초기화를 지연시킴
     @streamer = nil
   end
@@ -34,7 +34,7 @@ class MastodonClient
     puts "[마스토돈] 멘션 스트리밍 시작..."
     streamer = get_streamer
     return unless streamer
-    
+
     streamer.user do |event|
       if event.is_a?(Mastodon::Notification) && event.type == 'mention'
         block.call(event)
@@ -46,22 +46,33 @@ class MastodonClient
     retry
   end
 
-  # 멘션에 답글 작성 (frozen string 문제 해결)
-  def reply(to_status, message, in_reply_to_id: nil)
+  # 멘션에 답글 작성 (mention 전체 객체 호환)
+  def reply(mention, message)
     begin
-      puts "[마스토돈] → @#{to_status.account.acct} 에게 응답 전송"
-      status_text = "@#{to_status.account.acct} #{message}".dup
-      
-      # 기존 상점봇의 reply 방식과 호환
+      # mention이 전체 알림 객체일 경우 내부 status 접근
+      status = mention.respond_to?(:status) ? mention.status : mention
+
+      # 대상 정보 안전 추출
+      acct = mention.account.acct rescue "unknown"
+      in_reply_to_id = status.id rescue nil
+      visibility = status.visibility rescue "public"
+
+      puts "[마스토돈] → @#{acct} 에게 응답 전송"
+      status_text = "@#{acct} #{message}".dup
+
       response = @client.create_status(
         status_text,
         {
-          in_reply_to_id: in_reply_to_id || to_status.id,
-          visibility: 'public'
+          in_reply_to_id: in_reply_to_id,
+          visibility: visibility
         }
       )
       puts "답장 전송 완료: #{message[0..50]}..."
       response
+    rescue Mastodon::Error => e
+      puts "[API 에러] Mastodon 요청 실패: #{e.message}"
+      puts e.backtrace.first(3).join("\n")
+      nil
     rescue => e
       puts "[에러] 응답 전송 실패: #{e.message}"
       nil
@@ -116,17 +127,17 @@ class MastodonClient
   def self.validate_environment
     base_url = ENV['MASTODON_BASE_URL']
     token = ENV['MASTODON_TOKEN']
-    
+
     missing_vars = []
     missing_vars << 'MASTODON_BASE_URL' if base_url.nil? || base_url.empty?
     missing_vars << 'MASTODON_TOKEN' if token.nil? || token.empty?
-    
+
     if missing_vars.any?
       puts "필수 환경변수 누락: #{missing_vars.join(', ')}"
       puts ".env 파일을 확인해주세요."
       return false
     end
-    
+
     true
   end
 
