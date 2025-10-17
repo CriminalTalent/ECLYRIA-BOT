@@ -24,8 +24,8 @@ SHEET_ID = ENV['GOOGLE_SHEET_ID']
 
 puts "[상점봇] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
-# Google Sheets 연결
-sheet_manager = SheetManager.new(SHEET_ID)
+# Google Sheets 연결 (✅ base_url 인자 추가)
+sheet_manager = SheetManager.new(BASE_URL, SHEET_ID)
 puts "Google Sheets 연결 성공: #{sheet_manager.sheet_name}"
 
 # Mastodon 클라이언트 초기화
