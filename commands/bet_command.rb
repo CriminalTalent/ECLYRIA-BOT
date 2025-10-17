@@ -18,29 +18,30 @@ class BetCommand
     end
     
     today = Date.today.to_s
-    last_bet_date = user[:last_bet_date].to_s
-    bet_count = user[:bet_count].to_i
     
-    # 날짜가 다르면 베팅 횟수 리셋
+    # 베팅 횟수 확인 (날짜 정보 없이 횟수만 체크)
+    bet_count = user[:bet_count].to_i
+    last_bet_date = user[:last_bet_date].to_s
+    
     if last_bet_date != today
       bet_count = 0
     end
     
     if bet_count >= MAX_BETS_PER_DAY
-      return "얘야, 오늘은 이미 3번이나 베팅했구나! 내일 다시 와보렴."
+      return "하루 베팅은 3회까지만 가능하단다~ 내일 다시 도전해 보렴!"
     end
     
     galleons = user[:galleons].to_i
     if galleons < 0
-      return "갈레온이 마이너스일 때는 베팅할 수 없단다. 먼저 빚을 갚고 오렴."
+      return "얘야, 갈레온이 마이너스 상태에서는 베팅이 불가능하단다."
     end
     
     if @amount < 1 || @amount > 20
-      return "얘야, 베팅은 1갈레온에서 20갈레온 사이로만 할 수 있단다."
+      return "베팅은 1에서 20갈레온까지만 가능하단다~"
     end
     
     if galleons < @amount
-      return "갈레온이 모자라는구나. 지금 가진 건 #{galleons}갈레온뿐이란다."
+      return "갈레온이 부족하단다. 가진 갈레온은 #{galleons}밖에 없구나."
     end
     
     # 베팅 실행
@@ -48,7 +49,7 @@ class BetCommand
     result = @amount * multiplier
     new_galleons = galleons + result
     
-    # 사용자 정보 업데이트
+    # 사용자 정보 업데이트 (날짜 정보 제거)
     user[:galleons] = new_galleons
     user[:last_bet_date] = today
     user[:bet_count] = bet_count + 1
@@ -56,14 +57,14 @@ class BetCommand
     update_result = @sheet_manager.update_player(user)
     unless update_result
       puts "[ERROR] 베팅 결과 업데이트 실패"
-      return "얘야, 무언가 문제가 생겼구나. 다시 시도해보렴."
+      return "베팅 처리 중 오류가 발생했습니다."
     end
     
-    # 결과 메시지 생성
+    # 결과 메시지 생성 (날짜 없이)
     if new_galleons < 0
-      return "오호! #{@amount} × #{multiplier} = #{result:+d}갈레온이구나.\n지금 갈레온은 0이고, #{new_galleons.abs}갈레온의 빚이 생겼단다."
+      return "베팅 결과: #{@amount} × #{multiplier} = #{result:+d}\n현재 갈레온 0 (빚 #{new_galleons.abs}갈레온 발생)"
     else
-      return "오호! #{@amount} × #{multiplier} = #{result:+d}갈레온이구나.\n이제 #{new_galleons}갈레온을 가지고 있단다."
+      return "베팅 결과: #{@amount} × #{multiplier} = #{result:+d}\n현재 갈레온 #{new_galleons}갈레온"
     end
   end
 end
