@@ -122,6 +122,10 @@ class SheetManager
     nil
   end
 
+  def get_player(user_id)
+    find_user(user_id)
+  end
+
   def update_user(user_id, data = {})
     user = find_user(user_id)
     return false unless user
