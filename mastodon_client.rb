@@ -63,7 +63,7 @@ class MastodonClient
         status_text,
         {
           in_reply_to_id: reply_to_id,
-          visibility: 'public'
+          visibility: 'unlisted'
         }
       )
       puts "답장 전송 완료: #{message[0..50]}..."
