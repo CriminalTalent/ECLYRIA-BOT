@@ -18,12 +18,14 @@ class BuyCommand
       return "어머머, 빚이 있으면 안 돼요! 갈레온부터 갚고 오세요~"
     end
 
-    item = @sheet_manager.get_item(@item_name)
+    item = @sheet_manager.find_item(@item_name)
     unless item
       return "어머, 그건 우리 가게에 없는데요? 다른 거 보실래요?"
     end
 
-    unless item[:purchasable]
+    # 판매 여부 확인: "O", "TRUE", "true", true 모두 허용
+    for_sale = item[:for_sale].to_s.upcase
+    unless ["O", "TRUE", "YES", "Y"].include?(for_sale)
       return "아이고, 그건 지금 안 팔아요~ 미안해요!"
     end
 
@@ -38,7 +40,7 @@ class BuyCommand
     new_galleons = galleons - price
     inventory = player[:items].to_s.split(",").map(&:strip)
     inventory << @item_name
-    
+
     @sheet_manager.update_user(@student_id, {
       galleons: new_galleons,
       items: inventory.join(",")
