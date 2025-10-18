@@ -28,23 +28,26 @@ class TarotCommand
 
     # 마지막 타로 날짜만 기록 (제한 목적이 아닌 통계 목적)
     today = Date.today.to_s
-    player[:last_tarot_date] = today
-    update_result = @sheet_manager.update_player(player)
+    
+    # update_user 메서드 사용 (update_player 대신)
+    update_result = @sheet_manager.update_user(@student_id, {
+      last_tarot_date: today
+    })
+    
     unless update_result
       puts "[ERROR] 타로 날짜 업데이트 실패"
       return "타로 카드 기록 중 오류가 발생했습니다."
     end
 
     puts "[DEBUG] 타로 카드 뽑기 완료: #{@student_id} - #{card}"
-
+    
     return <<~TEXT.strip
       [#{card}]
       #{meaning}
-      
+
       행운의 아이템: #{lucky_item}
       행운의 색: #{lucky_color}
       행운의 장소: #{lucky_place}
-
     TEXT
   end
 end
