@@ -1,10 +1,11 @@
 # ============================================
-# main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환)
+# main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환 버전)
 # ============================================
 # encoding: UTF-8
 require 'dotenv'
 require 'time'
 require 'json'
+require 'ostruct'
 require 'google/apis/sheets_v4'
 require 'googleauth'
 require_relative 'mastodon_client'
@@ -90,7 +91,7 @@ client = mastodon_client.instance_variable_get(:@client)
 
 loop do
   begin
-    # ✅ mastodon-api 1.1.0에서는 배열 직접 반환됨
+    # ✅ mastodon-api 1.1.0은 배열 직접 반환
     response = client.perform_request(:get, '/api/v1/notifications', { limit: 20 })
     notifications = response.map { |n| Mastodon::Notification.new(n) }
 
@@ -107,6 +108,10 @@ loop do
       puts "  ↳ #{content}"
 
       begin
+        # ✅ Hash → OpenStruct 변환 (명령어 파서 호환)
+        n.status = OpenStruct.new(n.status) if n.status.is_a?(Hash)
+        n.account = OpenStruct.new(n.account) if n.account.is_a?(Hash)
+
         CommandParser.parse(mastodon_client, sheet_manager, n)
       rescue => e
         puts "[에러] 명령어 실행 중 문제 발생: #{e.message}"
