@@ -11,7 +11,7 @@ gem 'activesupport', '~> 7.1', require: 'active_support/all'
 
 # --- Mastodon API ---
 # 최신 mastodon-api gem은 Faraday 2.x 호환 이슈가 있어 버전 고정이 안정적
-gem 'mastodon-api', '~> 1.2', require: 'mastodon'
+gem 'mastodon-api', '~> 1.1', require: 'mastodon'
 
 # --- Google Sheets Integration ---
 gem 'googleauth', '~> 1.9'
