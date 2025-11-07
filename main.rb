@@ -1,9 +1,10 @@
 # ============================================
-# main.rb (Shop Bot - mastodon-api 1.1.0 대응)
+# main.rb (Shop Bot - mastodon-api 1.1.0 완전 대응)
 # ============================================
 # encoding: UTF-8
 require 'dotenv'
 require 'time'
+require 'json'
 require 'google/apis/sheets_v4'
 require 'googleauth'
 require_relative 'mastodon_client'
@@ -60,6 +61,22 @@ rescue => e
   exit
 end
 
+# =============================
+# 임시 Notification 클래스 정의
+# =============================
+module Mastodon
+  class Notification
+    attr_accessor :id, :type, :status, :account
+
+    def initialize(data)
+      @id      = data['id']
+      @type    = data['type']
+      @status  = data['status']
+      @account = data['account']
+    end
+  end
+end
+
 puts "[상점봇] 시스템 준비 완료"
 puts "----------------------------------------"
 puts "Mentions 폴링 시작 (10초 간격)"
@@ -73,20 +90,18 @@ client = mastodon_client.instance_variable_get(:@client)
 
 loop do
   begin
-    # ✅ 직접 REST 호출로 대체 (mastodon-api 1.1.0용)
-    response = client.perform_request_with_object(:get, '/api/v1/notifications', Mastodon::Notification, { limit: 20 })
-    notifications = Array(response)
+    # ✅ mastodon-api 1.1.0에서 직접 REST 호출
+    response = client.perform_request(:get, '/api/v1/notifications', { limit: 20 })
+    notifications = JSON.parse(response.body).map { |n| Mastodon::Notification.new(n) }
 
     notifications.each do |n|
       next unless n.type == 'mention'
-      next if last_checked_id && n.id <= last_checked_id
+      next if last_checked_id && n.id.to_i <= last_checked_id.to_i
+      next unless n.status
 
-      status = n.status
-      next unless status
-
-      created_at = Time.parse(status.created_at.to_s).getlocal.strftime('%H:%M:%S')
-      sender = n.account.acct
-      content = status.content.force_encoding('UTF-8')
+      created_at = Time.parse(n.status['created_at'].to_s).getlocal.strftime('%H:%M:%S')
+      sender = n.account['acct']
+      content = n.status['content'].force_encoding('UTF-8')
 
       puts "[MENTION] #{created_at} - @#{sender}"
       puts "  ↳ #{content}"
