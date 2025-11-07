@@ -1,4 +1,5 @@
 # commands/bet_command.rb
+# encoding: UTF-8
 require 'date'
 
 class BetCommand
@@ -14,54 +15,60 @@ class BetCommand
     user = @sheet_manager.get_player(@student_id)
     unless user
       puts "[DEBUG] 플레이어 찾을 수 없음: #{@student_id}"
-      return "학적부에 없는 학생이구나, 교수님께 가보렴."
+      return "#{@student_id}(@#{@student_id})은(는) 학적부에 없어요~ 교수님께 가서 등록 먼저 하세요."
     end
 
     today = Date.today.to_s
     last_bet_date = user[:last_bet_date].to_s
+    last_bet_count = user[:last_bet_count].to_i rescue 0
 
-    # 오늘 베팅 횟수 계산 (간단하게 날짜만 체크)
-    bet_count = (last_bet_date == today) ? 1 : 0
-    
-    # 임시로 횟수 체크 제거 (시트에 bet_count 컬럼이 없으므로)
-    # if bet_count >= MAX_BETS_PER_DAY
-    #   return "하루 베팅은 3회까지만 가능하단다~ 내일 다시 도전해 보렴!"
-    # end
+    # 오늘 베팅 횟수 계산
+    if last_bet_date == today
+      bet_count = last_bet_count
+    else
+      bet_count = 0
+    end
+
+    if bet_count >= MAX_BETS_PER_DAY
+      return "#{@student_id}(@#{@student_id})은(는) 오늘은 이미 #{MAX_BETS_PER_DAY}번이나 베팅했어요~ 내일 다시 도전해보세요!"
+    end
 
     galleons = user[:galleons].to_i
     if galleons < 0
-      return "얘야, 갈레온이 마이너스 상태에서는 베팅이 불가능하단다."
+      return "#{@student_id}(@#{@student_id})은(는) 갈레온이 마이너스 상태라 베팅이 불가능해요."
     end
 
     if @amount < 1 || @amount > 20
-      return "베팅은 1에서 20갈레온까지만 가능하단다~"
+      return "베팅은 1에서 20갈레온까지만 가능해요~"
     end
 
     if galleons < @amount
-      return "갈레온이 부족하단다. 가진 갈레온은 #{galleons}개밖에 없구나."
+      return "갈레온이 부족해요. 지금은 #{galleons}개밖에 없어요."
     end
 
     # 베팅 실행
     multiplier = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5].sample
     result = @amount * multiplier
     new_galleons = galleons + result
+    new_bet_count = bet_count + 1
 
     # 사용자 정보 업데이트
     update_result = @sheet_manager.update_user(@student_id, {
       galleons: new_galleons,
-      last_bet_date: today
+      last_bet_date: today,
+      last_bet_count: new_bet_count
     })
 
     unless update_result
       puts "[ERROR] 베팅 결과 업데이트 실패"
-      return "베팅 처리 중 오류가 발생했습니다."
+      return "베팅 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요."
     end
 
-    # 결과 메시지 생성
+    # 결과 메시지 생성 (문체만 수정)
     if new_galleons < 0
-      return "베팅 결과: #{@amount} × #{multiplier} = #{result >= 0 ? "+" : ""}#{result}\n현재 갈레온 0개 (빚 #{new_galleons.abs}갈레온 발생)"
+      "#{@student_id}(@#{@student_id})이(가) #{@amount}갈레온을 걸었어요!\n결과는 ×#{multiplier}배, #{result >= 0 ? "+" : ""}#{result}갈레온이에요.\n지금 주머니엔 0갈레온, 빚 #{new_galleons.abs}갈레온이 생겼어요... (오늘 #{new_bet_count}/#{MAX_BETS_PER_DAY}회)"
     else
-      return "베팅 결과: #{@amount} × #{multiplier} = #{result >= 0 ? "+" : ""}#{result}\n현재 갈레온 #{new_galleons}개"
+      "#{@student_id}(@#{@student_id})이(가) #{@amount}갈레온을 걸었어요!\n결과는 ×#{multiplier}배, #{result >= 0 ? "+" : ""}#{result}갈레온이에요.\n지금 주머니엔 #{new_galleons}갈레온이에요~ (오늘 #{new_bet_count}/#{MAX_BETS_PER_DAY}회)"
     end
   end
 end
