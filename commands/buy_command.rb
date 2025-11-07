@@ -1,6 +1,7 @@
 # ============================================
 # commands/buy_command.rb
 # ============================================
+# encoding: UTF-8
 class BuyCommand
   def initialize(student_id, item_name, sheet_manager)
     @student_id = student_id.gsub('@', '')
@@ -11,29 +12,29 @@ class BuyCommand
   def execute
     player = @sheet_manager.find_user(@student_id)
     unless player
-      return "어머, 우리 가게 처음이시네? 먼저 교수님한테 가서 입학부터 하고 와요~"
+      return "#{@student_id}(@#{@student_id})은(는) 아직 학생 등록이 안 되어 있어요~ 교수님께 가서 입학 먼저 하고 오세요!"
     end
 
     if player[:galleons].to_i < 0
-      return "어머머, 빚이 있으면 안 돼요! 갈레온부터 갚고 오세요~"
+      return "#{@student_id}(@#{@student_id})은(는) 빚이 있어서 구매가 안 돼요! 갈레온부터 갚고 오세요~"
     end
 
     item = @sheet_manager.find_item(@item_name)
     unless item
-      return "어머, 그건 우리 가게에 없는데요? 다른 거 보실래요?"
+      return "#{@item_name}? 그건 우리 가게엔 없어요~ 다른 걸 한번 골라보세요!"
     end
 
     # 판매 여부 확인: "O", "TRUE", "true", true 모두 허용
     for_sale = item[:for_sale].to_s.upcase
     unless ["O", "TRUE", "YES", "Y"].include?(for_sale)
-      return "아이고, 그건 지금 안 팔아요~ 미안해요!"
+      return "#{@item_name}은(는) 지금 판매 중이 아니에요~ 다음에 다시 찾아주세요!"
     end
 
     price = item[:price].to_i
     galleons = player[:galleons].to_i
 
     if galleons < price
-      return "어머나, 갈레온이 #{price - galleons}개 부족한데요? 지금 #{galleons}개 가지고 계시잖아요~"
+      return "#{@student_id}(@#{@student_id})은(는) 갈레온이 #{price - galleons}개 부족해요~ 지금 가진 건 #{galleons}개뿐이에요."
     end
 
     # 구매 처리
@@ -46,6 +47,6 @@ class BuyCommand
       items: inventory.join(",")
     })
 
-    return "#{@item_name} 여기 있어요! #{price}갈레온이에요~ 남은 돈은 #{new_galleons}갈레온이고요!"
+    return "#{@student_id}(@#{@student_id})이(가) #{@item_name}을 샀어요! #{price}갈레온이에요~ 남은 돈은 #{new_galleons}갈레온이에요."
   end
 end
