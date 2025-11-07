@@ -1,5 +1,5 @@
 # ============================================
-# mastodon_client.rb (안정화 통합 최종 버전)
+# mastodon_client.rb (create_status 안정화 버전)
 # ============================================
 require 'mastodon'
 require 'uri'
@@ -54,7 +54,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # 통합 reply (Hash/Object 대응)
+  # reply (Hash/Object 대응 + 응답검증)
   # -------------------------------
   def reply(to_status_or_acct, message, in_reply_to_id: nil)
     begin
@@ -62,7 +62,6 @@ class MastodonClient
         account = to_status_or_acct.account
         acct = account.is_a?(Hash) ? account["acct"] : account.acct
 
-        # ✅ 안전한 ID 추출 (Hash/OpenStruct 대응)
         reply_to_id =
           if in_reply_to_id
             in_reply_to_id
@@ -81,16 +80,20 @@ class MastodonClient
       status_text = "@#{acct} #{message}".dup
       puts "[마스토돈] → @#{acct} 에게 응답 전송"
 
-      response = @client.create_status(
-        status_text,
-        {
-          in_reply_to_id: reply_to_id,
-          visibility: 'unlisted'
-        }
+      raw_response = @client.perform_request_with_object(
+        :post,
+        '/api/v1/statuses',
+        Mastodon::Status,
+        { status: status_text, in_reply_to_id: reply_to_id, visibility: 'unlisted' }
       )
 
-      puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
-      response
+      if raw_response.respond_to?(:id)
+        puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
+      else
+        puts "[경고] Mastodon 응답에 id가 없음 (비정상 응답)"
+        puts "  ↳ 응답 내용: #{raw_response.inspect}"
+      end
+      raw_response
     rescue Mastodon::Error => e
       puts "[에러] 응답 전송 실패 (API 오류): #{e.message}"
       puts e.backtrace.first(3)
