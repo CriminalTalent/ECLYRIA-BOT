@@ -1,4 +1,6 @@
-# sheet_manager.rb
+# ============================================
+# sheet_manager.rb (통합 안정화 버전)
+# ============================================
 require 'google/apis/sheets_v4'
 
 class SheetManager
@@ -8,6 +10,9 @@ class SheetManager
     @worksheets_cache = {}
   end
 
+  # -------------------------------
+  # 기본 읽기 / 쓰기 / 추가
+  # -------------------------------
   def read_values(range)
     @service.get_spreadsheet_values(@sheet_id, range).values
   rescue => e
@@ -46,59 +51,18 @@ class SheetManager
     worksheet_by_title(title)
   end
 
-  def get_stat(user_id, column_name)
-    clean_user_id = user_id.gsub('@', '')
-    
-    values = read_values("사용자!A:Z")
-    return nil if values.nil? || values.empty?
-    
-    headers = values[0]
-    id_index = headers.index("ID")
-    col_index = headers.index(column_name)
-    return nil unless id_index && col_index
-    
-    values.each_with_index do |row, index|
-      next if index == 0
-      row_id = (row[id_index] || "").gsub('@', '')
-      if row_id == clean_user_id
-        return row[col_index]
-      end
-    end
-    nil
-  end
-
-  def set_stat(user_id, column_name, value)
-    clean_user_id = user_id.gsub('@', '')
-    
-    values = read_values("사용자!A:Z")
-    return false if values.nil? || values.empty?
-    
-    headers = values[0]
-    id_index = headers.index("ID")
-    col_index = headers.index(column_name)
-    return false unless id_index && col_index
-    
-    values.each_with_index do |row, index|
-      next if index == 0
-      row_id = (row[id_index] || "").gsub('@', '')
-      if row_id == clean_user_id
-        col_letter = number_to_column_letter(col_index + 1)
-        range = "사용자!#{col_letter}#{index + 1}"
-        update_values(range, [[value]])
-        return true
-      end
-    end
-    false
-  end
-
+  # -------------------------------
+  # 사용자 관련
+  # -------------------------------
   def find_user(user_id)
     clean_user_id = user_id.gsub('@', '')
-    
-    values = read_values("사용자!A:K")
+
+    values = read_values("사용자!A:L")
     return nil if values.nil? || values.empty?
-    
+
     headers = values[0]
-    
+    ensure_last_bet_count_column(headers) # ✅ L열 자동 확인 및 생성
+
     values.each_with_index do |row, index|
       next if index == 0
       row_id = (row[0] || "").gsub('@', '')
@@ -115,7 +79,8 @@ class SheetManager
           attack: row[7].to_i,
           attendance_date: row[8],
           last_tarot_date: row[9],
-          house_score: row[10].to_i
+          house_score: row[10].to_i,
+          last_bet_count: (row[11] || "0").to_i  # ✅ L열 값 없을 경우 기본 0
         }
       end
     end
@@ -129,9 +94,9 @@ class SheetManager
   def update_user(user_id, data = {})
     user = find_user(user_id)
     return false unless user
-    
+
     sheet_row = user[:sheet_row]
-    
+
     row_data = [
       data[:id] || user[:id],
       data[:name] || user[:name],
@@ -143,22 +108,82 @@ class SheetManager
       data[:attack] || user[:attack],
       data[:attendance_date] || user[:attendance_date],
       data[:last_tarot_date] || user[:last_tarot_date],
-      data[:house_score] || user[:house_score]
+      data[:house_score] || user[:house_score],
+      data[:last_bet_count] || user[:last_bet_count]
     ]
-    
-    range = "사용자!A#{sheet_row}:K#{sheet_row}"
+
+    range = "사용자!A#{sheet_row}:L#{sheet_row}"
     puts "[DEBUG] 전체 행 업데이트: #{range}"
-    
+
     result = update_values(range, [row_data])
     result != nil
+  end
+
+  # -------------------------------
+  # L열(마지막 베팅 횟수) 자동 생성
+  # -------------------------------
+  def ensure_last_bet_count_column(headers)
+    unless headers.include?("마지막베팅횟수")
+      puts "[INFO] '마지막베팅횟수' 열이 없어 자동으로 추가합니다."
+      headers << "마지막베팅횟수"
+      update_values("사용자!A1:L1", [headers])
+    end
+  rescue => e
+    puts "[ERROR] L열 자동 생성 실패: #{e.message}"
+  end
+
+  # -------------------------------
+  # 통계 / 수정 / 증감
+  # -------------------------------
+  def get_stat(user_id, column_name)
+    clean_user_id = user_id.gsub('@', '')
+    values = read_values("사용자!A:Z")
+    return nil if values.nil? || values.empty?
+
+    headers = values[0]
+    id_index = headers.index("ID")
+    col_index = headers.index(column_name)
+    return nil unless id_index && col_index
+
+    values.each_with_index do |row, index|
+      next if index == 0
+      row_id = (row[id_index] || "").gsub('@', '')
+      if row_id == clean_user_id
+        return row[col_index]
+      end
+    end
+    nil
+  end
+
+  def set_stat(user_id, column_name, value)
+    clean_user_id = user_id.gsub('@', '')
+    values = read_values("사용자!A:Z")
+    return false if values.nil? || values.empty?
+
+    headers = values[0]
+    id_index = headers.index("ID")
+    col_index = headers.index(column_name)
+    return false unless id_index && col_index
+
+    values.each_with_index do |row, index|
+      next if index == 0
+      row_id = (row[id_index] || "").gsub('@', '')
+      if row_id == clean_user_id
+        col_letter = number_to_column_letter(col_index + 1)
+        range = "사용자!#{col_letter}#{index + 1}"
+        update_values(range, [[value]])
+        return true
+      end
+    end
+    false
   end
 
   def increment_user_value(user_id, field, amount)
     user = find_user(user_id)
     return false unless user
-    
+
     puts "[DEBUG] #{field} +#{amount} for #{user_id}"
-    
+
     case field
     when "갈레온"
       update_user(user_id, galleons: user[:galleons] + amount)
@@ -172,9 +197,9 @@ class SheetManager
   def set_user_value(user_id, field, value)
     user = find_user(user_id)
     return false unless user
-    
+
     puts "[DEBUG] #{field} = #{value} for #{user_id}"
-    
+
     case field
     when "출석날짜"
       update_user(user_id, attendance_date: value)
@@ -186,15 +211,18 @@ class SheetManager
   end
 
   def add_user_row(user_data)
-    append_values("사용자!A:K", [user_data])
+    append_values("사용자!A:L", [user_data])
   end
 
+  # -------------------------------
+  # 아이템 / 조사 관련
+  # -------------------------------
   def find_item(item_name)
     values = read_values("아이템!A:E")
     return nil if values.nil? || values.empty?
-    
+
     headers = values[0]
-    
+
     values.each_with_index do |row, index|
       next if index == 0
       if row[0] == item_name
@@ -213,7 +241,7 @@ class SheetManager
   def find_investigation(target, kind)
     values = read_values("조사!A:Z")
     return nil if values.nil? || values.empty?
-    
+
     headers = values[0]
     values.each_with_index do |row, index|
       next if index == 0
@@ -236,6 +264,9 @@ class SheetManager
     nil
   end
 
+  # -------------------------------
+  # 내부 유틸리티
+  # -------------------------------
   private
 
   def number_to_column_letter(col_num)
@@ -249,6 +280,9 @@ class SheetManager
   end
 end
 
+# ============================================
+# WorksheetWrapper
+# ============================================
 class WorksheetWrapper
   def initialize(sheet_manager, title)
     @sheet_manager = sheet_manager
@@ -291,9 +325,9 @@ class WorksheetWrapper
     while @data[row-1].length < col
       @data[row-1] << ""
     end
-    
+
     @data[row-1][col-1] = value
-    
+
     cell_range = "#{@title}!#{column_letter(col)}#{row}"
     @sheet_manager.update_values(cell_range, [[value]])
   end
