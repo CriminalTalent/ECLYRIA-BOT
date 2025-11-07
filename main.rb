@@ -1,5 +1,5 @@
 # ============================================
-# main.rb (Shop Bot - mastodon-api 1.1.0 완전 대응)
+# main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환)
 # ============================================
 # encoding: UTF-8
 require 'dotenv'
@@ -90,9 +90,9 @@ client = mastodon_client.instance_variable_get(:@client)
 
 loop do
   begin
-    # ✅ mastodon-api 1.1.0에서 직접 REST 호출
+    # ✅ mastodon-api 1.1.0에서는 배열 직접 반환됨
     response = client.perform_request(:get, '/api/v1/notifications', { limit: 20 })
-    notifications = JSON.parse(response.body).map { |n| Mastodon::Notification.new(n) }
+    notifications = response.map { |n| Mastodon::Notification.new(n) }
 
     notifications.each do |n|
       next unless n.type == 'mention'
