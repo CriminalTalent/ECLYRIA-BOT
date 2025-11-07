@@ -61,7 +61,18 @@ class MastodonClient
       if to_status_or_acct.respond_to?(:account)
         account = to_status_or_acct.account
         acct = account.is_a?(Hash) ? account["acct"] : account.acct
-        reply_to_id = in_reply_to_id || to_status_or_acct.id
+
+        # ✅ 안전한 ID 추출 (Hash/OpenStruct 대응)
+        reply_to_id =
+          if in_reply_to_id
+            in_reply_to_id
+          elsif to_status_or_acct.respond_to?(:id)
+            to_status_or_acct.id
+          elsif to_status_or_acct.is_a?(Hash)
+            to_status_or_acct["id"]
+          else
+            nil
+          end
       else
         acct = to_status_or_acct
         reply_to_id = in_reply_to_id
