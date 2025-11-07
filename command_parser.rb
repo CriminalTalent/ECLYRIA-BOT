@@ -11,6 +11,9 @@ require_relative 'commands/coin_command'
 require_relative 'commands/yn_command'
 
 module CommandParser
+  # ==========================================================
+  # TAROT 카드 전체 데이터 (완전 보존)
+  # ==========================================================
   TAROT_DATA = {
     # 메이저 아르카나 (22장)
     "THE FOOL" => "순수한 마음으로 새로운 모험을 시작할 때입니다. 두려움 없이 미지의 세계로 발걸음을 내딛어보세요. 때로는 계획보다 직감을 따르는 것이 더 큰 기회를 가져다줄 수 있습니다.",
@@ -35,7 +38,7 @@ module CommandParser
     "THE SUN" => "성공과 기쁨이 가득한 시기입니다. 모든 것이 밝게 빛나며 긍정적인 에너지가 넘칩니다. 자신감을 가지고 당당하게 세상에 자신을 드러내보세요.",
     "JUDGEMENT" => "과거를 정리하고 새로운 시작을 준비할 때입니다. 자신을 객관적으로 평가하고 필요한 변화를 받아들이세요. 부활과 재탄생의 기회가 왔습니다.",
     "THE WORLD" => "한 사이클이 완성되며 성취감을 느낄 수 있습니다. 목표를 달성하고 새로운 여정을 시작할 준비가 되어 있습니다. 완성과 통합의 순간을 즐기세요.",
-    
+
     # 완드 (14장)
     "ACE OF WANDS" => "새로운 열정과 창의적 에너지가 폭발하는 시기입니다. 용기를 내어 새로운 프로젝트를 시작해보세요.",
     "TWO OF WANDS" => "미래를 계획하고 큰 그림을 그릴 때입니다. 가능성을 탐색하며 다음 단계를 준비하세요.",
@@ -51,7 +54,7 @@ module CommandParser
     "KNIGHT OF WANDS" => "열정적이고 모험적인 에너지가 넘칩니다. 대담하게 행동하되 무모하지 않게 주의하세요.",
     "QUEEN OF WANDS" => "자신감과 카리스마가 빛을 발하는 시기입니다. 리더십을 발휘하세요.",
     "KING OF WANDS" => "비전과 영감으로 주변을 이끕니다. 강력한 리더십으로 목표를 달성하세요.",
-    
+
     # 컵 (14장)
     "ACE OF CUPS" => "새로운 사랑과 감정적 충만함이 찾아옵니다. 마음을 열고 받아들이세요.",
     "TWO OF CUPS" => "조화로운 관계와 파트너십이 형성됩니다. 상호 이해와 존중이 깊어집니다.",
@@ -67,7 +70,7 @@ module CommandParser
     "KNIGHT OF CUPS" => "낭만적이고 이상주의적인 에너지가 넘칩니다. 감정을 표현하고 꿈을 추구하세요.",
     "QUEEN OF CUPS" => "공감과 직관이 강한 시기입니다. 감정을 이해하고 돌보는 역할을 하세요.",
     "KING OF CUPS" => "감정적 성숙함과 균형을 이룹니다. 지혜롭고 차분하게 감정을 다스리세요.",
-    
+
     # 검 (14장)
     "ACE OF SWORDS" => "명확한 사고와 새로운 아이디어가 떠오릅니다. 진실을 추구하고 결단을 내리세요.",
     "TWO OF SWORDS" => "어려운 결정을 내려야 합니다. 균형을 유지하며 신중히 선택하세요.",
@@ -83,7 +86,7 @@ module CommandParser
     "KNIGHT OF SWORDS" => "빠르고 결단력 있는 행동이 필요합니다. 목표를 향해 직진하되 충동적이지 않게 주의하세요.",
     "QUEEN OF SWORDS" => "명확한 사고와 독립성이 빛을 발합니다. 객관적이고 공정하게 판단하세요.",
     "KING OF SWORDS" => "지적이고 논리적인 접근이 필요합니다. 진실과 정의를 추구하며 리드하세요.",
-    
+
     # 펜타클 (14장)
     "ACE OF PENTACLES" => "새로운 재정적 기회나 물질적 시작이 찾아옵니다. 현실적 목표를 세우세요.",
     "TWO OF PENTACLES" => "균형과 유연성이 필요합니다. 여러 일을 조화롭게 관리하세요.",
@@ -100,6 +103,8 @@ module CommandParser
     "QUEEN OF PENTACLES" => "실용적이고 양육적인 에너지가 넘칩니다. 풍요와 안정을 창조하세요.",
     "KING OF PENTACLES" => "재정적 성공과 안정을 이룹니다. 현명한 관리와 리더십을 발휘하세요."
   }
+
+  MAX_BETS_PER_DAY = 3
 
   def self.parse(mastodon_client, sheet_manager, mention)
     begin
@@ -131,13 +136,23 @@ module CommandParser
       when /\[타로\]/
         message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
       when /\[베팅\/(\d+)\]/
-        message = BetCommand.new(sender, $1.to_i, sheet_manager).execute
+        today = Time.now.strftime('%Y-%m-%d')
+        bet_count = sheet_manager.get_daily_count(sender, today, "BET")
+        if bet_count >= MAX_BETS_PER_DAY
+          message = "오늘은 더 이상 베팅할 수 없습니다. (최대 #{MAX_BETS_PER_DAY}회)"
+        else
+          message = BetCommand.new(sender, $1.to_i, sheet_manager).execute
+          sheet_manager.log_command(sender, "BET", $1.to_i)
+        end
       when /\[(\d+)D\]/
         message = DiceCommand.new(sender, $1.to_i).execute
+        sheet_manager.log_command(sender, "DICE", $1.to_i)
       when /\[동전\]/
         message = CoinCommand.new(sender).execute
+        sheet_manager.log_command(sender, "COIN", nil)
       when /\[YN\]/i
         message = YnCommand.new(sender).execute
+        sheet_manager.log_command(sender, "YN", nil)
       else
         puts "[무시] 인식되지 않은 명령어: #{content}"
         return
@@ -147,6 +162,7 @@ module CommandParser
         result = mastodon_client.reply(mention.status, message)
         if result
           puts "[DEBUG] 답글 전송 완료"
+          sheet_manager.log_command(sender, "REPLY", content)
         else
           puts "[경고] 답글 전송 실패 (HTTP 오류)"
         end
