@@ -1,5 +1,5 @@
 # ============================================
-# mastodon_client.rb (안정화 통합 버전)
+# mastodon_client.rb (안정화 통합 최종 버전)
 # ============================================
 require 'mastodon'
 require 'uri'
@@ -15,7 +15,6 @@ class MastodonClient
       base_url: base_url,
       bearer_token: token
     )
-
     @streamer = nil
   end
 
@@ -55,12 +54,13 @@ class MastodonClient
   end
 
   # -------------------------------
-  # 통합 reply (멘션 / 계정 문자열 모두 처리)
+  # 통합 reply (Hash/Object 대응)
   # -------------------------------
   def reply(to_status_or_acct, message, in_reply_to_id: nil)
     begin
       if to_status_or_acct.respond_to?(:account)
-        acct = to_status_or_acct.account.acct
+        account = to_status_or_acct.account
+        acct = account.is_a?(Hash) ? account["acct"] : account.acct
         reply_to_id = in_reply_to_id || to_status_or_acct.id
       else
         acct = to_status_or_acct
@@ -77,6 +77,7 @@ class MastodonClient
           visibility: 'unlisted'
         }
       )
+
       puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
       response
     rescue Mastodon::Error => e
