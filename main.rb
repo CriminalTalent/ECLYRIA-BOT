@@ -1,5 +1,5 @@
 # ============================================
-# main.rb (Shop Bot)
+# main.rb (Shop Bot - mastodon-api 1.1.0 대응)
 # ============================================
 # encoding: UTF-8
 require 'dotenv'
@@ -69,11 +69,13 @@ puts "----------------------------------------"
 # Mentions 폴링 루프
 # =============================
 last_checked_id = nil
+client = mastodon_client.instance_variable_get(:@client)
 
 loop do
   begin
-    # ✅ mastodon-api 1.1.0 호환: get_notifications 사용
-    notifications = mastodon_client.instance_variable_get(:@client).get_notifications(limit: 20)
+    # ✅ 직접 REST 호출로 대체 (mastodon-api 1.1.0용)
+    response = client.perform_request_with_object(:get, '/api/v1/notifications', Mastodon::Notification, { limit: 20 })
+    notifications = Array(response)
 
     notifications.each do |n|
       next unless n.type == 'mention'
@@ -99,7 +101,6 @@ loop do
       last_checked_id = n.id
     end
 
-  # ✅ mastodon-api 1.1.0에서는 Mastodon::Error 하나로 통합
   rescue Mastodon::Error => e
     puts "[Mastodon 오류] #{e.class}: #{e.message}"
     sleep 5
