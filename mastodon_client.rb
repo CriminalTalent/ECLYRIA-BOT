@@ -1,5 +1,5 @@
 # ============================================
-# mastodon_client.rb (create_status 안정화 버전)
+# mastodon_client.rb (최종 안정화 버전)
 # ============================================
 require 'mastodon'
 require 'uri'
@@ -54,7 +54,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # reply (Hash/Object 대응 + 응답검증)
+  # reply (응답 파싱 강화)
   # -------------------------------
   def reply(to_status_or_acct, message, in_reply_to_id: nil)
     begin
@@ -80,20 +80,22 @@ class MastodonClient
       status_text = "@#{acct} #{message}".dup
       puts "[마스토돈] → @#{acct} 에게 응답 전송"
 
-      raw_response = @client.perform_request_with_object(
-        :post,
-        '/api/v1/statuses',
-        Mastodon::Status,
-        { status: status_text, in_reply_to_id: reply_to_id, visibility: 'unlisted' }
-      )
+      response = @client.create_status(status_text, {
+        in_reply_to_id: reply_to_id,
+        visibility: 'unlisted'
+      })
 
-      if raw_response.respond_to?(:id)
+      # ✅ 응답이 올바른 JSON인지 검증
+      if response.respond_to?(:id)
         puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
+      elsif response.is_a?(Hash) && response["id"]
+        puts "[DEBUG] 답장 전송 완료 (Hash): #{response["id"]}"
       else
-        puts "[경고] Mastodon 응답에 id가 없음 (비정상 응답)"
-        puts "  ↳ 응답 내용: #{raw_response.inspect}"
+        puts "[경고] Mastodon 응답 구조 이상 (id 없음)"
+        puts "  ↳ #{response.inspect[0..200]}"
       end
-      raw_response
+
+      response
     rescue Mastodon::Error => e
       puts "[에러] 응답 전송 실패 (API 오류): #{e.message}"
       puts e.backtrace.first(3)
