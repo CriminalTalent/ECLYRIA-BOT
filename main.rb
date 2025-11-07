@@ -72,7 +72,8 @@ last_checked_id = nil
 
 loop do
   begin
-    notifications = mastodon_client.instance_variable_get(:@client).notifications(limit: 20)
+    # ✅ mastodon-api 1.1.0 호환: get_notifications 사용
+    notifications = mastodon_client.instance_variable_get(:@client).get_notifications(limit: 20)
 
     notifications.each do |n|
       next unless n.type == 'mention'
@@ -98,13 +99,17 @@ loop do
       last_checked_id = n.id
     end
 
-  rescue Mastodon::Error::NotFound => e
-    puts "[경고] 대상 게시물이 삭제됨: #{e.message}"
-  rescue Mastodon::Error::Forbidden => e
-    puts "[경고] 접근 권한 없음: #{e.message}"
+  # ✅ mastodon-api 1.1.0에서는 Mastodon::Error 하나로 통합
+  rescue Mastodon::Error => e
+    puts "[Mastodon 오류] #{e.class}: #{e.message}"
+    sleep 5
+    retry
+
   rescue => e
     puts "[에러] 폴링 중 예외 발생: #{e.message}"
     puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+    sleep 5
+    retry
   end
 
   sleep 10
