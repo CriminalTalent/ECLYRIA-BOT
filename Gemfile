@@ -2,7 +2,7 @@
 # Gemfile for Mastodon Bots (Shop / Professor / Rumor)
 # ============================================
 source 'https://rubygems.org'
-ruby '3.0.2'
+ruby '3.2.3'
 
 # --- Core dependencies ---
 gem 'dotenv', '~> 3.1'
