@@ -2,6 +2,7 @@
 # main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환 버전)
 # ============================================
 # encoding: UTF-8
+require 'bundler/setup'
 require 'dotenv'
 require 'time'
 require 'json'
