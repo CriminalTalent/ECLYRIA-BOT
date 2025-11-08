@@ -1,6 +1,4 @@
-# ============================================
 # mastodon_client.rb (HTTP 직접 호출 안정화 버전)
-# ============================================
 require 'http'
 require 'json'
 require 'dotenv'
@@ -13,7 +11,6 @@ class MastodonClient
     @http = HTTP.auth("Bearer #{@token}")
   end
 
-  # Mentions용 수동 폴링 (API v1/notifications)
   def get_mentions(limit: 20)
     res = @http.get("#{@base_url}/api/v1/notifications", params: { limit: limit })
     return [] unless res.status.success?
@@ -23,10 +20,9 @@ class MastodonClient
     []
   end
 
-  # ✅ 직접 Mastodon API로 응답 (기존 mastodon-api gem 미사용)
   def reply(to_status, message)
     acct = to_status.dig("account", "acct")
-    in_reply_to_id = to_status["status"]["id"] rescue nil
+    in_reply_to_id = to_status.dig("status", "id")
     text = "@#{acct} #{message}"
 
     puts "[마스토돈] → @#{acct} 에게 응답 전송"
@@ -43,8 +39,7 @@ class MastodonClient
     if res.status.success?
       puts "[DEBUG] 응답 전송 성공 (#{message[0..40]})"
     else
-      puts "[경고] 응답 실패: #{res.status}"
-      puts res.body.to_s
+      puts "[경고] 응답 실패 (HTTP #{res.status}): #{res.body.to_s}"
     end
   rescue => e
     puts "[에러] 응답 전송 중 예외 발생: #{e.message}"
