@@ -1,5 +1,5 @@
 # ============================================
-# mastodon_client.rb (최종 안정화 버전)
+# mastodon_client.rb (안정화 수정 버전 - Ruby 3.2 대응)
 # ============================================
 require 'mastodon'
 require 'uri'
@@ -54,7 +54,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # reply (응답 파싱 강화)
+  # reply (응답 전송)
   # -------------------------------
   def reply(to_status_or_acct, message, in_reply_to_id: nil)
     begin
@@ -85,7 +85,18 @@ class MastodonClient
         visibility: 'unlisted'
       })
 
-      # ✅ 응답이 올바른 JSON인지 검증
+      # 안전한 문자열 처리 (Ruby 3.2 frozen string 대응)
+      begin
+        if response.respond_to?(:body)
+          safe_body = String(response.body).dup.force_encoding('UTF-8') rescue nil
+          if safe_body && !safe_body.empty?
+            puts "[DEBUG] 응답 본문 확인 완료"
+          end
+        end
+      rescue => e
+        puts "[경고] 응답 본문 처리 중 오류: #{e.message}"
+      end
+
       if response.respond_to?(:id)
         puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
       elsif response.is_a?(Hash) && response["id"]
