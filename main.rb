@@ -1,5 +1,5 @@
 # ============================================
-# main.rb (Shop Bot - HTTP 기반 안정 버전, 이전 알림 무시 완전판)
+# main.rb (Shop Bot - HTTP 기반 안정 버전, since_id 완전 대응)
 # ============================================
 # encoding: UTF-8
 require 'bundler/setup'
@@ -31,7 +31,7 @@ BASE_URL        = ENV['MASTODON_BASE_URL']
 TOKEN           = ENV['MASTODON_TOKEN']
 SHEET_ID        = ENV['GOOGLE_SHEET_ID']
 CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
-LAST_ID_FILE    = "last_mention_id.txt"
+LAST_ID_FILE    = 'last_mention_id.txt' # ✅ 마지막 멘션 ID 저장 파일
 
 puts "[상점봇] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
@@ -77,7 +77,7 @@ puts "Mentions 폴링 시작 (10초 간격)"
 puts "----------------------------------------"
 
 # =============================
-# 마지막 mention ID 불러오기
+# Mentions 폴링 루프
 # =============================
 last_checked_id = if File.exist?(LAST_ID_FILE)
   File.read(LAST_ID_FILE).strip
@@ -85,21 +85,18 @@ else
   nil
 end
 
-# =============================
-# Mentions 폴링 루프
-# =============================
 loop do
   begin
-    mentions = mastodon_client.get_mentions(limit: 20)
+    # ✅ since_id 적용으로 "이후 알림만" 가져오기
+    mentions = mastodon_client.get_mentions(limit: 20, since_id: last_checked_id)
     mentions.sort_by! { |n| n["id"].to_i }
+    next if mentions.empty?
 
     mentions.each do |n|
       next unless n["type"] == "mention"
-      next if last_checked_id && n["id"].to_i <= last_checked_id.to_i
+      next unless n["status"]
 
       status = n["status"]
-      next unless status
-
       created_at = Time.parse(status["created_at"].to_s).getlocal.strftime('%H:%M:%S')
       sender     = n["account"]["acct"]
       content    = status["content"].to_s.force_encoding('UTF-8')
@@ -108,7 +105,7 @@ loop do
       puts "  ↳ #{content}"
 
       begin
-        # OpenStruct로 래핑 (CommandParser 호환)
+        # OpenStruct 변환으로 CommandParser 호환 유지
         n["status"]  = OpenStruct.new(status)
         n["account"] = OpenStruct.new(n["account"])
 
@@ -118,12 +115,12 @@ loop do
         puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
       end
 
-      # 마지막 ID 갱신 및 파일에 저장
+      # ✅ 마지막 멘션 ID 갱신 및 파일 저장
       last_checked_id = n["id"]
       File.write(LAST_ID_FILE, last_checked_id)
     end
 
-  rescue StandardError => e
+  rescue => e
     puts "[에러] 폴링 중 예외 발생: #{e.class} - #{e.message}"
     puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
     sleep 5
