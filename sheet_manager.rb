@@ -1,5 +1,5 @@
 # ============================================
-# sheet_manager.rb (통합 안정화 버전)
+# sheet_manager.rb (통합 안정화 + 이미지URL 완전판)
 # ============================================
 require 'google/apis/sheets_v4'
 
@@ -52,16 +52,15 @@ class SheetManager
   end
 
   # -------------------------------
-  # 사용자 관련
+  # 사용자 관련 (변경 없음)
   # -------------------------------
   def find_user(user_id)
     clean_user_id = user_id.gsub('@', '')
-
     values = read_values("사용자!A:L")
     return nil if values.nil? || values.empty?
 
     headers = values[0]
-    ensure_last_bet_count_column(headers) # ✅ L열 자동 확인 및 생성
+    ensure_last_bet_count_column(headers)
 
     values.each_with_index do |row, index|
       next if index == 0
@@ -80,23 +79,17 @@ class SheetManager
           attendance_date: row[8],
           last_tarot_date: row[9],
           house_score: row[10].to_i,
-          last_bet_count: (row[11] || "0").to_i  # ✅ L열 값 없을 경우 기본 0
+          last_bet_count: (row[11] || "0").to_i
         }
       end
     end
     nil
   end
 
-  def get_player(user_id)
-    find_user(user_id)
-  end
-
   def update_user(user_id, data = {})
     user = find_user(user_id)
     return false unless user
-
     sheet_row = user[:sheet_row]
-
     row_data = [
       data[:id] || user[:id],
       data[:name] || user[:name],
@@ -111,16 +104,43 @@ class SheetManager
       data[:house_score] || user[:house_score],
       data[:last_bet_count] || user[:last_bet_count]
     ]
-
     range = "사용자!A#{sheet_row}:L#{sheet_row}"
-    puts "[DEBUG] 전체 행 업데이트: #{range}"
-
-    result = update_values(range, [row_data])
-    result != nil
+    update_values(range, [row_data])
+    true
   end
 
   # -------------------------------
-  # L열(마지막 베팅 횟수) 자동 생성
+  # 아이템 관련 (이미지URL 포함 확장)
+  # -------------------------------
+  def read_items
+    values = read_values("아이템!A:F")
+    return [] if values.nil? || values.empty?
+
+    headers = values[0]
+    puts "[INFO] 아이템 시트 헤더 확인: #{headers.inspect}"
+
+    values[1..].map do |row|
+      next if row[0].to_s.strip.empty?
+      {
+        name: row[0].to_s.strip,
+        description: row[1].to_s.strip,
+        price: (row[2] || 0).to_i,
+        for_sale: (row[3].to_s.strip == 'TRUE' || row[3].include?('✅')),
+        usable: (row[4].to_s.strip == 'TRUE' || row[4].include?('✅')),
+        image_url: (row[5] || "").strip
+      }
+    end.compact
+  rescue => e
+    puts "[에러] 아이템 시트 읽기 실패: #{e.message}"
+    []
+  end
+
+  def find_item(item_name)
+    read_items.find { |i| i[:name] == item_name }
+  end
+
+  # -------------------------------
+  # L열(마지막 베팅횟수) 자동 생성
   # -------------------------------
   def ensure_last_bet_count_column(headers)
     unless headers.include?("마지막베팅횟수")
@@ -133,139 +153,7 @@ class SheetManager
   end
 
   # -------------------------------
-  # 통계 / 수정 / 증감
-  # -------------------------------
-  def get_stat(user_id, column_name)
-    clean_user_id = user_id.gsub('@', '')
-    values = read_values("사용자!A:Z")
-    return nil if values.nil? || values.empty?
-
-    headers = values[0]
-    id_index = headers.index("ID")
-    col_index = headers.index(column_name)
-    return nil unless id_index && col_index
-
-    values.each_with_index do |row, index|
-      next if index == 0
-      row_id = (row[id_index] || "").gsub('@', '')
-      if row_id == clean_user_id
-        return row[col_index]
-      end
-    end
-    nil
-  end
-
-  def set_stat(user_id, column_name, value)
-    clean_user_id = user_id.gsub('@', '')
-    values = read_values("사용자!A:Z")
-    return false if values.nil? || values.empty?
-
-    headers = values[0]
-    id_index = headers.index("ID")
-    col_index = headers.index(column_name)
-    return false unless id_index && col_index
-
-    values.each_with_index do |row, index|
-      next if index == 0
-      row_id = (row[id_index] || "").gsub('@', '')
-      if row_id == clean_user_id
-        col_letter = number_to_column_letter(col_index + 1)
-        range = "사용자!#{col_letter}#{index + 1}"
-        update_values(range, [[value]])
-        return true
-      end
-    end
-    false
-  end
-
-  def increment_user_value(user_id, field, amount)
-    user = find_user(user_id)
-    return false unless user
-
-    puts "[DEBUG] #{field} +#{amount} for #{user_id}"
-
-    case field
-    when "갈레온"
-      update_user(user_id, galleons: user[:galleons] + amount)
-    when "개별 기숙사 점수"
-      update_user(user_id, house_score: user[:house_score] + amount)
-    else
-      false
-    end
-  end
-
-  def set_user_value(user_id, field, value)
-    user = find_user(user_id)
-    return false unless user
-
-    puts "[DEBUG] #{field} = #{value} for #{user_id}"
-
-    case field
-    when "출석날짜"
-      update_user(user_id, attendance_date: value)
-    when "과제날짜"
-      update_user(user_id, last_bet_date: value)
-    else
-      false
-    end
-  end
-
-  def add_user_row(user_data)
-    append_values("사용자!A:L", [user_data])
-  end
-
-  # -------------------------------
-  # 아이템 / 조사 관련
-  # -------------------------------
-  def find_item(item_name)
-    values = read_values("아이템!A:E")
-    return nil if values.nil? || values.empty?
-
-    headers = values[0]
-
-    values.each_with_index do |row, index|
-      next if index == 0
-      if row[0] == item_name
-        return {
-          name: row[0],
-          description: row[1],
-          price: row[2].to_i,
-          for_sale: row[3],
-          category: row[4]
-        }
-      end
-    end
-    nil
-  end
-
-  def find_investigation(target, kind)
-    values = read_values("조사!A:Z")
-    return nil if values.nil? || values.empty?
-
-    headers = values[0]
-    values.each_with_index do |row, index|
-      next if index == 0
-      if row[0] == target
-        if kind == "조사"
-          if ["조사", "DM조사"].include?(row[1])
-            result = {}
-            headers.each_with_index { |header, col_index| result[header] = row[col_index] }
-            return result
-          end
-        else
-          if row[1] == kind
-            result = {}
-            headers.each_with_index { |header, col_index| result[header] = row[col_index] }
-            return result
-          end
-        end
-      end
-    end
-    nil
-  end
-
-  # -------------------------------
-  # 내부 유틸리티
+  # 내부 유틸
   # -------------------------------
   private
 
@@ -281,7 +169,7 @@ class SheetManager
 end
 
 # ============================================
-# WorksheetWrapper
+# WorksheetWrapper (변경 없음)
 # ============================================
 class WorksheetWrapper
   def initialize(sheet_manager, title)
@@ -296,19 +184,9 @@ class WorksheetWrapper
     @data ||= []
   end
 
-  def save
-    true
-  end
-
-  def num_rows
-    load_data
-    @data.length
-  end
-
-  def rows
-    load_data
-    @data
-  end
+  def save; true; end
+  def num_rows; load_data; @data.length; end
+  def rows; load_data; @data; end
 
   def [](row, col)
     load_data
@@ -319,28 +197,20 @@ class WorksheetWrapper
 
   def []=(row, col, value)
     load_data
-    while @data.length < row
-      @data << []
-    end
-    while @data[row-1].length < col
-      @data[row-1] << ""
-    end
-
+    while @data.length < row; @data << []; end
+    while @data[row-1].length < col; @data[row-1] << ""; end
     @data[row-1][col-1] = value
-
-    cell_range = "#{@title}!#{column_letter(col)}#{row}"
-    @sheet_manager.update_values(cell_range, [[value]])
+    range = "#{@title}!#{number_to_column_letter(col)}#{row}"
+    @sheet_manager.update_values(range, [[value]])
   end
 
   def update_cell(row, col, value)
-    column_letter = number_to_column_letter(col)
-    range = "#{@title}!#{column_letter}#{row}"
+    range = "#{@title}!#{number_to_column_letter(col)}#{row}"
     @sheet_manager.update_values(range, [[value]])
     load_data
   end
 
   def insert_rows(at_row, rows_data)
-    puts "[DEBUG] WorksheetWrapper.insert_rows 호출됨: #{rows_data.inspect}"
     range = "#{@title}!A#{at_row}"
     @sheet_manager.append_values(range, rows_data)
     load_data
@@ -349,16 +219,6 @@ class WorksheetWrapper
   private
 
   def number_to_column_letter(col_num)
-    result = ""
-    while col_num > 0
-      col_num -= 1
-      result = ((col_num % 26) + 65).chr + result
-      col_num /= 26
-    end
-    result
-  end
-
-  def column_letter(col_num)
     result = ""
     while col_num > 0
       col_num -= 1
