@@ -1,8 +1,5 @@
-# ============================================
-# Gemfile (Shop Bot - 안정 버전)
-# ============================================
 source 'https://rubygems.org'
-ruby '3.0.2'
+ruby '3.2.3'
 
 gem 'mastodon-api', '~> 1.1', require: 'mastodon'
 gem 'dotenv'
