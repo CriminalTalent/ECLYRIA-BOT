@@ -1,8 +1,10 @@
 # ============================================
-# mastodon_client.rb (완성형 안정화 버전)
+# mastodon_client.rb (최종 안정화 + 이미지 자동 인식형)
 # ============================================
 require 'mastodon'
 require 'uri'
+require 'open-uri'
+require 'tempfile'
 require 'json'
 require 'dotenv'
 Dotenv.load('.env')
@@ -54,48 +56,25 @@ class MastodonClient
   end
 
   # -------------------------------
-  # reply (멘션 응답)
+  # reply (응답 파싱 강화)
   # -------------------------------
-  def reply(to_status_or_acct, message, in_reply_to_id: nil)
+  def reply(to_status_or_acct, message, in_reply_to_id: nil, image_url: nil)
     begin
-      if to_status_or_acct.respond_to?(:account)
-        account = to_status_or_acct.account
-        acct = account.is_a?(Hash) ? account["acct"] : account.acct
-
-        reply_to_id =
-          if in_reply_to_id
-            in_reply_to_id
-          elsif to_status_or_acct.respond_to?(:id)
-            to_status_or_acct.id
-          elsif to_status_or_acct.is_a?(Hash)
-            to_status_or_acct["id"]
-          else
-            nil
-          end
-      else
-        acct = to_status_or_acct
-        reply_to_id = in_reply_to_id
-      end
-
+      acct, reply_to_id = extract_acct_info(to_status_or_acct, in_reply_to_id)
       status_text = "@#{acct} #{message}".dup
       puts "[마스토돈] → @#{acct} 에게 응답 전송"
 
+      media_ids = []
+      if image_url && !image_url.strip.empty?
+        media_id = upload_image(image_url)
+        media_ids << media_id if media_id
+      end
+
       response = @client.create_status(status_text, {
         in_reply_to_id: reply_to_id,
-        visibility: 'unlisted'
+        visibility: 'unlisted',
+        media_ids: media_ids.compact
       })
-
-      # 안전한 문자열 처리 (Ruby 3.2 frozen string 대응)
-      begin
-        if response.respond_to?(:body)
-          safe_body = String(response.body).dup.force_encoding('UTF-8') rescue nil
-          if safe_body && !safe_body.empty?
-            puts "[DEBUG] 응답 본문 처리 완료"
-          end
-        end
-      rescue => e
-        puts "[경고] 응답 본문 처리 중 오류: #{e.message}"
-      end
 
       if response.respond_to?(:id)
         puts "[DEBUG] 답장 전송 완료: #{message[0..60]}"
@@ -105,76 +84,102 @@ class MastodonClient
         puts "[경고] Mastodon 응답 구조 이상 (id 없음)"
         puts "  ↳ #{response.inspect[0..200]}"
       end
-
       response
     rescue Mastodon::Error => e
       puts "[에러] 응답 전송 실패 (API 오류): #{e.message}"
-      puts e.backtrace.first(3)
       nil
     rescue => e
       puts "[에러] 응답 전송 중 예외 발생: #{e.message}"
-      puts e.backtrace.first(3)
       nil
     end
   end
 
   # -------------------------------
-  # broadcast (전체 공개 게시)
+  # 공지 / 일반 포스트 / DM
   # -------------------------------
-  def broadcast(message)
-    begin
-      puts "[마스토돈] → 전체 공지 전송"
-      @client.create_status(message, visibility: 'public')
-    rescue => e
-      puts "[에러] 공지 전송 실패: #{e.message}"
-    end
+  def broadcast(message, image_url: nil)
+    post_with_optional_image(message, visibility: 'public', image_url:)
   end
 
-  # -------------------------------
-  # say (일반 포스트)
-  # -------------------------------
-  def say(message)
-    begin
-      puts "[마스토돈] → 일반 포스트 전송"
-      @client.create_status(message, visibility: 'public')
-    rescue => e
-      puts "[에러] 포스트 전송 실패: #{e.message}"
-    end
+  def say(message, image_url: nil)
+    post_with_optional_image(message, visibility: 'public', image_url:)
   end
 
-  # -------------------------------
-  # post_with_image (이미지 포함 포스트)
-  # -------------------------------
-  def post_with_image(message, image_path)
-    begin
-      puts "[마스토돈] → 이미지 포함 포스트 전송: #{image_path}"
-      file = File.open(image_path, 'rb')
-      media = @client.upload_media(file)
-      file.close
-
-      response = @client.create_status(message, visibility: 'public', media_ids: [media.id])
-      puts "[DEBUG] 이미지 포함 포스트 완료 (ID: #{response.id})"
-    rescue => e
-      puts "[에러] 이미지 포스트 실패: #{e.message}"
-      puts e.backtrace.first(3)
-    end
-  end
-
-  # -------------------------------
-  # dm (비공개 DM 전송)
-  # -------------------------------
-  def dm(to_acct, message)
+  def dm(to_acct, message, image_url: nil)
     begin
       puts "[마스토돈] → @#{to_acct} DM 전송"
       status_text = "@#{to_acct} #{message}".dup
-      @client.create_status(status_text, visibility: 'direct')
+      media_ids = []
+      if image_url && !image_url.strip.empty?
+        media_id = upload_image(image_url)
+        media_ids << media_id if media_id
+      end
+      @client.create_status(status_text, visibility: 'direct', media_ids: media_ids.compact)
     rescue => e
       puts "[에러] DM 전송 실패: #{e.message}"
     end
   end
 
   # -------------------------------
-  # 인증 / 환경 검증
+  # 이미지 업로드 (URL 또는 로컬 경로 자동 인식)
+  # -------------------------------
+  def upload_image(image_source)
+    begin
+      if image_source.start_with?('http')
+        puts "[이미지] URL 업로드 시도: #{image_source}"
+        Tempfile.create(['img', File.extname(image_source)]) do |temp|
+          URI.open(image_source) { |r| temp.write(r.read) }
+          temp.rewind
+          media = @client.upload_media(temp)
+          return media.id
+        end
+      elsif File.exist?(image_source)
+        puts "[이미지] 로컬 파일 업로드 시도: #{image_source}"
+        File.open(image_source, 'rb') do |file|
+          media = @client.upload_media(file)
+          return media.id
+        end
+      else
+        puts "[경고] 이미지 경로 또는 URL이 유효하지 않습니다: #{image_source}"
+        nil
+      end
+    rescue => e
+      puts "[에러] 이미지 업로드 실패: #{e.message}"
+      nil
+    end
+  end
+
+  # -------------------------------
+  # 내부 유틸
+  # -------------------------------
+  def extract_acct_info(obj, reply_id)
+    if obj.respond_to?(:account)
+      account = obj.account
+      acct = account.is_a?(Hash) ? account["acct"] : account.acct
+      reply_to_id = reply_id || (obj.respond_to?(:id) ? obj.id : nil)
+    else
+      acct = obj
+      reply_to_id = reply_id
+    end
+    [acct, reply_to_id]
+  end
+
+  def post_with_optional_image(message, visibility: 'public', image_url: nil)
+    begin
+      media_ids = []
+      if image_url && !image_url.strip.empty?
+        media_id = upload_image(image_url)
+        media_ids << media_id if media_id
+      end
+
+      @client.create_status(message, visibility:, media_ids:)
+    rescue => e
+      puts "[에러] 포스트 전송 실패: #{e.message}"
+    end
+  end
+
+  # -------------------------------
+  # 인증 / 환경검증
   # -------------------------------
   def me
     @client.verify_credentials.acct
