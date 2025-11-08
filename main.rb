@@ -1,5 +1,5 @@
 # ============================================
-# main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환 버전)
+# main.rb (Shop Bot - HTTP 기반 안정 버전)
 # ============================================
 # encoding: UTF-8
 require 'bundler/setup'
@@ -18,7 +18,11 @@ Dotenv.load('.env')
 # =============================
 # 환경 변수 검증
 # =============================
-unless MastodonClient.validate_environment
+required_envs = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
+missing = required_envs.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
+
+if missing.any?
+  missing.each { |v| puts "[환경변수 누락] #{v}" }
   puts "[오류] 환경 변수가 올바르지 않습니다. .env 파일을 확인하세요."
   exit 1
 end
@@ -26,7 +30,7 @@ end
 BASE_URL        = ENV['MASTODON_BASE_URL']
 TOKEN           = ENV['MASTODON_TOKEN']
 SHEET_ID        = ENV['GOOGLE_SHEET_ID']
-CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS'] || 'credentials.json'
+CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
 
 puts "[상점봇] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
@@ -66,21 +70,6 @@ rescue => e
   exit 1
 end
 
-# =============================
-# Notification 래퍼 (mastodon-api 1.1.0 JSON 대응)
-# =============================
-module Mastodon
-  class Notification
-    attr_accessor :id, :type, :status, :account
-    def initialize(data)
-      @id      = data['id']
-      @type    = data['type']
-      @status  = data['status']
-      @account = data['account']
-    end
-  end
-end
-
 puts "[상점봇] 시스템 준비 완료"
 puts "----------------------------------------"
 puts "Mentions 폴링 시작 (10초 간격)"
@@ -90,33 +79,29 @@ puts "----------------------------------------"
 # Mentions 폴링 루프
 # =============================
 last_checked_id = nil
-client = mastodon_client.instance_variable_get(:@client)
 
 loop do
   begin
-    # mastodon-api 1.1.0: 배열(JSON) 직접 반환
-    response = client.perform_request(:get, '/api/v1/notifications', { limit: 20 })
-    notifications = response.map { |n| Mastodon::Notification.new(n) }
+    mentions = mastodon_client.get_mentions(limit: 20)
+    mentions.sort_by! { |n| n["id"].to_i }
 
-    # 오래된 것부터 처리
-    notifications.sort_by! { |n| n.id.to_i }
+    mentions.each do |n|
+      next if n["type"] != "mention"
+      next if last_checked_id && n["id"].to_i <= last_checked_id.to_i
 
-    notifications.each do |n|
-      next unless n.type == 'mention'
-      next if last_checked_id && n.id.to_i <= last_checked_id.to_i
-      next unless n.status
+      status = n["status"]
+      next unless status
 
-      created_at = Time.parse(n.status['created_at'].to_s).getlocal.strftime('%H:%M:%S')
-      sender     = n.account['acct']
-      content    = n.status['content'].to_s.force_encoding('UTF-8')
+      created_at = Time.parse(status["created_at"].to_s).getlocal.strftime('%H:%M:%S')
+      sender     = n["account"]["acct"]
+      content    = status["content"].to_s.force_encoding('UTF-8')
 
       puts "[MENTION] #{created_at} - @#{sender}"
       puts "  ↳ #{content}"
 
       begin
-        # Hash → OpenStruct 변환 (파서 호환)
-        n.status  = OpenStruct.new(n.status)  if n.status.is_a?(Hash)
-        n.account = OpenStruct.new(n.account) if n.account.is_a?(Hash)
+        n["status"]  = OpenStruct.new(status)
+        n["account"] = OpenStruct.new(n["account"])
 
         CommandParser.parse(mastodon_client, sheet_manager, n)
       rescue => e
@@ -124,15 +109,11 @@ loop do
         puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
       end
 
-      last_checked_id = n.id
+      last_checked_id = n["id"]
     end
 
-  rescue Mastodon::Error => e
-    puts "[Mastodon 오류] #{e.class}: #{e.message}"
-    sleep 5
-    retry
-  rescue => e
-    puts "[에러] 폴링 중 예외 발생: #{e.message}"
+  rescue StandardError => e
+    puts "[에러] 폴링 중 예외 발생: #{e.class} - #{e.message}"
     puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
     sleep 5
     retry
