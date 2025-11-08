@@ -14,9 +14,7 @@ class SheetManager
     @sheet_id = sheet_id
   end
 
-  # --------------------------------------------
-  # 범위 읽기
-  # --------------------------------------------
+  # --- 읽기·쓰기 기본기 ------------------------------------
   def read_range(range)
     result = @service.get_spreadsheet_values(@sheet_id, range)
     result.values || []
@@ -25,52 +23,30 @@ class SheetManager
     []
   end
 
-  # --------------------------------------------
-  # 범위에 값 업데이트
-  # --------------------------------------------
   def update_range(range, values)
     body = Google::Apis::SheetsV4::ValueRange.new(values: values)
-    @service.update_spreadsheet_value(
-      @sheet_id,
-      range,
-      body,
-      value_input_option: 'USER_ENTERED'
-    )
+    @service.update_spreadsheet_value(@sheet_id, range, body, value_input_option: 'USER_ENTERED')
   rescue => e
     puts "[에러] 시트 업데이트 실패: #{range} (#{e.message})"
   end
 
-  # --------------------------------------------
-  # 단일 셀 업데이트
-  # --------------------------------------------
   def update_cell(range, value)
     update_range(range, [[value]])
   end
 
-  # --------------------------------------------
-  # 행 추가 (로그 기록용)
-  # --------------------------------------------
   def append_row(range, row_values)
     body = Google::Apis::SheetsV4::ValueRange.new(values: [row_values])
-    @service.append_spreadsheet_value(
-      @sheet_id,
-      range,
-      body,
-      value_input_option: 'USER_ENTERED'
-    )
+    @service.append_spreadsheet_value(@sheet_id, range, body, value_input_option: 'USER_ENTERED')
   rescue => e
     puts "[에러] 행 추가 실패: #{range} (#{e.message})"
   end
 
-  # --------------------------------------------
-  # 플레이어 데이터 전체 업데이트
-  # --------------------------------------------
+  # --- 유저 관련 ------------------------------------------
   def update_player_row(player_name, updated_row)
     player_rows = read_range('사용자!A2:L')
     idx = player_rows.find_index { |r| r[0].to_s.strip == player_name.to_s.strip }
     if idx
-      row_index = idx + 2
-      range = "사용자!A#{row_index}:L#{row_index}"
+      range = "사용자!A#{idx + 2}:L#{idx + 2}"
       puts "[DEBUG] 전체 행 업데이트: #{range}"
       update_range(range, [updated_row])
     else
@@ -78,9 +54,7 @@ class SheetManager
     end
   end
 
-  # --------------------------------------------
-  # 일일 명령어 횟수 확인 (예: BET 등)
-  # --------------------------------------------
+  # --- 로그 유틸 ------------------------------------------
   def get_daily_count(user, date, type)
     log_rows = read_range('log!A:G')
     log_rows.count { |r| r[2] == user && r[0]&.start_with?(date) && r[1] == type }
@@ -89,9 +63,6 @@ class SheetManager
     0
   end
 
-  # --------------------------------------------
-  # 명령 로그 기록 (유저, 명령 타입, 추가정보)
-  # --------------------------------------------
   def log_command(user, type, detail = nil)
     timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
     append_row('log!A:G', [timestamp, type, user, '', detail, '', ''])
@@ -99,9 +70,6 @@ class SheetManager
     puts "[에러] 로그 기록 실패: #{e.message}"
   end
 
-  # --------------------------------------------
-  # 셀 한 칸 읽기
-  # --------------------------------------------
   def read_cell(range)
     result = @service.get_spreadsheet_values(@sheet_id, range)
     (result.values || [[]]).flatten.first
@@ -110,14 +78,11 @@ class SheetManager
     nil
   end
 
-  # --------------------------------------------
-  # ✅ 추가: get_player (TarotCommand 등에서 사용)
-  # --------------------------------------------
+  # --- ✅ 추가: 봇이 찾는 메서드 ----------------------------
   def get_player(username)
     rows = read_range('사용자!A2:L')
     row = rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
     return nil unless row
-
     {
       id: row[0],
       display: row[1],
@@ -131,9 +96,6 @@ class SheetManager
     nil
   end
 
-  # --------------------------------------------
-  # ✅ 추가: find_user (Buy/TransferCommand 등에서 사용)
-  # --------------------------------------------
   def find_user(username)
     rows = read_range('사용자!A2:L')
     rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
