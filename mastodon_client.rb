@@ -1,89 +1,53 @@
 # ============================================
-# mastodon_client.rb
-# Mastodon API 래퍼 (v1.1.0 호환)
+# mastodon_client.rb (HTTP 직접 호출 안정화 버전)
 # ============================================
-# encoding: UTF-8
-require 'mastodon'
+require 'http'
 require 'json'
-require 'time'
+require 'dotenv'
+Dotenv.load('.env')
 
 class MastodonClient
-  attr_reader :base_url, :token, :client
-
-  # -----------------------------
-  # 초기화 및 환경 변수 검증
-  # -----------------------------
   def initialize(base_url:, token:)
     @base_url = base_url
     @token = token
-
-    @client = Mastodon::REST::Client.new(base_url: @base_url, bearer_token: @token)
+    @http = HTTP.auth("Bearer #{@token}")
   end
 
-  def self.validate_environment
-    required = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
-    missing = required.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
-    if missing.any?
-      puts "[환경오류] 누락된 환경 변수: #{missing.join(', ')}"
-      return false
-    end
-    true
-  end
-
-  # -----------------------------
-  # 상태(글) 작성
-  # -----------------------------
-  def post_status(message, visibility: 'unlisted', media_ids: nil)
-    safe_message = message.to_s.dup.force_encoding('UTF-8')
-    params = { status: safe_message, visibility: visibility }
-    params[:media_ids] = media_ids if media_ids
-
-    @client.create_status(**params)
-    puts "[마스토돈] 게시 완료"
+  # Mentions용 수동 폴링 (API v1/notifications)
+  def get_mentions(limit: 20)
+    res = @http.get("#{@base_url}/api/v1/notifications", params: { limit: limit })
+    return [] unless res.status.success?
+    JSON.parse(res.body.to_s).select { |n| n["type"] == "mention" }
   rescue => e
-    puts "[에러] 게시 실패: #{e.message}"
-    puts e.backtrace.first(3)
-  end
-
-  # -----------------------------
-  # 답글 작성
-  # -----------------------------
-  def reply(in_reply_to_id:, message:)
-    safe_message = message.to_s.dup.force_encoding('UTF-8')
-    begin
-      @client.create_status(
-        safe_message,
-        in_reply_to_id: in_reply_to_id,
-        visibility: 'unlisted'
-      )
-      puts "[마스토돈] → 답글 전송 완료"
-    rescue => e
-      puts "[에러] 응답 전송 중 예외 발생: #{e.message}"
-      puts e.backtrace.first(3)
-    end
-  end
-
-  # -----------------------------
-  # 멘션 읽기
-  # -----------------------------
-  def fetch_mentions(limit: 20)
-    response = @client.perform_request(:get, '/api/v1/notifications', { limit: limit })
-    response.select { |n| n['type'] == 'mention' }
-  rescue => e
-    puts "[에러] 멘션 불러오기 실패: #{e.message}"
+    puts "[에러] Mentions 불러오기 실패: #{e.message}"
     []
   end
 
-  # -----------------------------
-  # 미디어 업로드 (이미지 등)
-  # -----------------------------
-  def upload_media(file_path, description: '')
-    file = File.open(file_path)
-    media = @client.upload_media(file, description: description)
-    file.close
-    media.id
+  # ✅ 직접 Mastodon API로 응답 (기존 mastodon-api gem 미사용)
+  def reply(to_status, message)
+    acct = to_status.dig("account", "acct")
+    in_reply_to_id = to_status["status"]["id"] rescue nil
+    text = "@#{acct} #{message}"
+
+    puts "[마스토돈] → @#{acct} 에게 응답 전송"
+
+    res = @http.post(
+      "#{@base_url}/api/v1/statuses",
+      json: {
+        status: text,
+        in_reply_to_id: in_reply_to_id,
+        visibility: "unlisted"
+      }
+    )
+
+    if res.status.success?
+      puts "[DEBUG] 응답 전송 성공 (#{message[0..40]})"
+    else
+      puts "[경고] 응답 실패: #{res.status}"
+      puts res.body.to_s
+    end
   rescue => e
-    puts "[에러] 미디어 업로드 실패: #{e.message}"
-    nil
+    puts "[에러] 응답 전송 중 예외 발생: #{e.message}"
+    puts e.backtrace.first(3)
   end
 end
