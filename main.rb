@@ -1,162 +1,141 @@
 # ============================================
-# sheet_manager.rb
-# Google Sheets 연동 관리 클래스 (상점봇 전용 통합 버전)
+# main.rb (Shop Bot - mastodon-api 1.1.0 완전 호환 버전)
 # ============================================
-
+# encoding: UTF-8
+require 'dotenv'
+require 'time'
+require 'json'
+require 'ostruct'
 require 'google/apis/sheets_v4'
+require 'googleauth'
+require_relative 'mastodon_client'
+require_relative 'sheet_manager'
+require_relative 'command_parser'
 
-class SheetManager
-  attr_reader :service, :sheet_id
+Dotenv.load('.env')
 
-  # -----------------------------
-  # 초기화
-  # -----------------------------
-  def initialize(service, sheet_id)
-    @service = service
-    @sheet_id = sheet_id
-  end
+# =============================
+# 환경 변수 검증
+# =============================
+unless MastodonClient.validate_environment
+  puts "[오류] 환경 변수가 올바르지 않습니다. .env 파일을 확인하세요."
+  exit 1
+end
 
-  # =====================================================
-  # 🔹 기본 유틸
-  # =====================================================
-  def read_range(range)
-    response = @service.get_spreadsheet_values(@sheet_id, range)
-    response.values || []
-  rescue => e
-    puts "[에러] 시트 읽기 실패 (#{range}): #{e.message}"
-    []
-  end
+BASE_URL        = ENV['MASTODON_BASE_URL']
+TOKEN           = ENV['MASTODON_TOKEN']
+SHEET_ID        = ENV['GOOGLE_SHEET_ID']
+CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS'] || 'credentials.json'
 
-  def write_range(range, values)
-    value_range = Google::Apis::SheetsV4::ValueRange.new(values: values)
-    @service.update_spreadsheet_value(
-      @sheet_id,
-      range,
-      value_range,
-      value_input_option: 'USER_ENTERED'
-    )
-    puts "[시트] #{range} 업데이트 완료"
-  rescue => e
-    puts "[에러] 시트 쓰기 실패 (#{range}): #{e.message}"
-  end
+puts "[상점봇] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
-  def append_row(range, values)
-    value_range = Google::Apis::SheetsV4::ValueRange.new(values: [values])
-    @service.append_spreadsheet_value(
-      @sheet_id,
-      range,
-      value_range,
-      value_input_option: 'USER_ENTERED'
-    )
-    puts "[시트] 행 추가 완료: #{values.inspect}"
-  rescue => e
-    puts "[에러] 행 추가 실패: #{e.message}"
-  end
+# =============================
+# Google Sheets API 연결
+# =============================
+begin
+  scopes = ['https://www.googleapis.com/auth/spreadsheets']
+  authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
+    json_key_io: File.open(CREDENTIAL_PATH),
+    scope: scopes
+  )
+  authorizer.fetch_access_token!
 
-  def update_cell(range, value)
-    write_range(range, [[value]])
-  end
+  service = Google::Apis::SheetsV4::SheetsService.new
+  service.client_options.open_timeout_sec = 10
+  service.client_options.read_timeout_sec = 30
+  service.authorization = authorizer
 
-  # =====================================================
-  # 🔹 사용자 관련
-  # =====================================================
-  def find_user(user_id)
-    clean_id = user_id.gsub('@', '')
-    data = read_range("사용자!A:L")
-    return nil if data.empty?
+  sheet_manager = SheetManager.new(service, SHEET_ID)
+  puts "[Google Sheets] 연결 성공: #{SHEET_ID}"
+rescue => e
+  puts "[에러] Google Sheets 연결 실패: #{e.message}"
+  puts e.backtrace.first(3)
+  exit 1
+end
 
-    headers = data.first
-    data[1..].each_with_index do |row, i|
-      id = (row[0] || '').gsub('@', '')
-      next unless id == clean_id
+# =============================
+# Mastodon 클라이언트 연결
+# =============================
+begin
+  mastodon_client = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
+  puts "[Mastodon] 연결 성공: #{BASE_URL}"
+rescue => e
+  puts "[에러] Mastodon 클라이언트 초기화 실패: #{e.message}"
+  puts e.backtrace.first(3)
+  exit 1
+end
 
-      return {
-        row_index: i + 2,  # 실제 시트 행 번호 (1-based)
-        id: row[0],
-        name: row[1],
-        galleons: (row[2] || 0).to_i,
-        items: row[3] || "",
-        last_task: row[4],
-        house: row[5],
-        hp: (row[6] || 0).to_i,
-        attack: (row[7] || 0).to_i,
-        attendance: row[8],
-        last_tarot: row[9],
-        house_score: (row[10] || 0).to_i,
-        last_bet_count: (row[11] || "0").to_i
-      }
+# =============================
+# Notification 래퍼 (mastodon-api 1.1.0 JSON 대응)
+# =============================
+module Mastodon
+  class Notification
+    attr_accessor :id, :type, :status, :account
+    def initialize(data)
+      @id      = data['id']
+      @type    = data['type']
+      @status  = data['status']
+      @account = data['account']
     end
-    nil
   end
+end
 
-  def update_user(user_id, data = {})
-    user = find_user(user_id)
-    return false unless user
+puts "[상점봇] 시스템 준비 완료"
+puts "----------------------------------------"
+puts "Mentions 폴링 시작 (10초 간격)"
+puts "----------------------------------------"
 
-    row = user[:row_index]
-    updated = [
-      data[:id] || user[:id],
-      data[:name] || user[:name],
-      data[:galleons] || user[:galleons],
-      data[:items] || user[:items],
-      data[:last_task] || user[:last_task],
-      data[:house] || user[:house],
-      data[:hp] || user[:hp],
-      data[:attack] || user[:attack],
-      data[:attendance] || user[:attendance],
-      data[:last_tarot] || user[:last_tarot],
-      data[:house_score] || user[:house_score],
-      data[:last_bet_count] || user[:last_bet_count]
-    ]
+# =============================
+# Mentions 폴링 루프
+# =============================
+last_checked_id = nil
+client = mastodon_client.instance_variable_get(:@client)
 
-    range = "사용자!A#{row}:L#{row}"
-    write_range(range, [updated])
-    true
-  end
+loop do
+  begin
+    # mastodon-api 1.1.0: 배열(JSON) 직접 반환
+    response = client.perform_request(:get, '/api/v1/notifications', { limit: 20 })
+    notifications = response.map { |n| Mastodon::Notification.new(n) }
 
-  def add_user_row(user_data)
-    append_row("사용자!A:L", user_data)
-  end
+    # 오래된 것부터 처리
+    notifications.sort_by! { |n| n.id.to_i }
 
-  # =====================================================
-  # 🔹 아이템 관련 (이미지URL 포함)
-  # =====================================================
-  def read_items
-    data = read_range("아이템!A:F")
-    return [] if data.empty?
+    notifications.each do |n|
+      next unless n.type == 'mention'
+      next if last_checked_id && n.id.to_i <= last_checked_id.to_i
+      next unless n.status
 
-    headers = data.first
-    puts "[INFO] 아이템 시트 헤더: #{headers.inspect}"
+      created_at = Time.parse(n.status['created_at'].to_s).getlocal.strftime('%H:%M:%S')
+      sender     = n.account['acct']
+      content    = n.status['content'].to_s.force_encoding('UTF-8')
 
-    data[1..].map do |row|
-      next if row[0].to_s.strip.empty?
-      {
-        name: row[0].to_s.strip,
-        description: row[1].to_s.strip,
-        price: (row[2] || 0).to_i,
-        for_sale: truthy?(row[3]),
-        usable: truthy?(row[4]),
-        image_url: (row[5] || "").strip
-      }
-    end.compact
+      puts "[MENTION] #{created_at} - @#{sender}"
+      puts "  ↳ #{content}"
+
+      begin
+        # Hash → OpenStruct 변환 (파서 호환)
+        n.status  = OpenStruct.new(n.status)  if n.status.is_a?(Hash)
+        n.account = OpenStruct.new(n.account) if n.account.is_a?(Hash)
+
+        CommandParser.parse(mastodon_client, sheet_manager, n)
+      rescue => e
+        puts "[에러] 명령어 실행 중 문제 발생: #{e.message}"
+        puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+      end
+
+      last_checked_id = n.id
+    end
+
+  rescue Mastodon::Error => e
+    puts "[Mastodon 오류] #{e.class}: #{e.message}"
+    sleep 5
+    retry
   rescue => e
-    puts "[에러] 아이템 시트 읽기 실패: #{e.message}"
-    []
+    puts "[에러] 폴링 중 예외 발생: #{e.message}"
+    puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+    sleep 5
+    retry
   end
 
-  def find_item(item_name)
-    items = read_items
-    items.find { |i| i[:name] == item_name }
-  end
-
-  # =====================================================
-  # 🔹 내부 유틸
-  # =====================================================
-  private
-
-  def truthy?(val)
-    return false if val.nil?
-    str = val.to_s.strip.downcase
-    str == 'true' || str == '1' || str.include?('✅') || str == 'yes'
-  end
+  sleep 10
 end
