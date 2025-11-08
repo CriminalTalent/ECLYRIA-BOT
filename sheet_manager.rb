@@ -109,4 +109,36 @@ class SheetManager
     puts "[에러] 셀 읽기 실패: #{range} (#{e.message})"
     nil
   end
+
+  # --------------------------------------------
+  # ✅ 추가: get_player (TarotCommand 등에서 사용)
+  # --------------------------------------------
+  def get_player(username)
+    rows = read_range('사용자!A2:L')
+    row = rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
+    return nil unless row
+
+    {
+      id: row[0],
+      display: row[1],
+      galleons: row[2].to_i,
+      items: row[3].to_s.split(','),
+      last_action: row[4],
+      house: row[5]
+    }
+  rescue => e
+    puts "[에러] get_player 실패: #{e.message}"
+    nil
+  end
+
+  # --------------------------------------------
+  # ✅ 추가: find_user (Buy/TransferCommand 등에서 사용)
+  # --------------------------------------------
+  def find_user(username)
+    rows = read_range('사용자!A2:L')
+    rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
+  rescue => e
+    puts "[에러] find_user 실패: #{e.message}"
+    nil
+  end
 end
