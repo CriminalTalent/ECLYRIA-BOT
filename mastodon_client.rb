@@ -1,5 +1,5 @@
 # ============================================
-# mastodon_client.rb (안정화 수정 버전 - Ruby 3.2 대응)
+# mastodon_client.rb (완성형 안정화 버전)
 # ============================================
 require 'mastodon'
 require 'uri'
@@ -54,7 +54,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # reply (응답 전송)
+  # reply (멘션 응답)
   # -------------------------------
   def reply(to_status_or_acct, message, in_reply_to_id: nil)
     begin
@@ -90,7 +90,7 @@ class MastodonClient
         if response.respond_to?(:body)
           safe_body = String(response.body).dup.force_encoding('UTF-8') rescue nil
           if safe_body && !safe_body.empty?
-            puts "[DEBUG] 응답 본문 확인 완료"
+            puts "[DEBUG] 응답 본문 처리 완료"
           end
         end
       rescue => e
@@ -119,7 +119,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # 공지 / 일반 포스트 / DM
+  # broadcast (전체 공개 게시)
   # -------------------------------
   def broadcast(message)
     begin
@@ -130,6 +130,9 @@ class MastodonClient
     end
   end
 
+  # -------------------------------
+  # say (일반 포스트)
+  # -------------------------------
   def say(message)
     begin
       puts "[마스토돈] → 일반 포스트 전송"
@@ -139,6 +142,27 @@ class MastodonClient
     end
   end
 
+  # -------------------------------
+  # post_with_image (이미지 포함 포스트)
+  # -------------------------------
+  def post_with_image(message, image_path)
+    begin
+      puts "[마스토돈] → 이미지 포함 포스트 전송: #{image_path}"
+      file = File.open(image_path, 'rb')
+      media = @client.upload_media(file)
+      file.close
+
+      response = @client.create_status(message, visibility: 'public', media_ids: [media.id])
+      puts "[DEBUG] 이미지 포함 포스트 완료 (ID: #{response.id})"
+    rescue => e
+      puts "[에러] 이미지 포스트 실패: #{e.message}"
+      puts e.backtrace.first(3)
+    end
+  end
+
+  # -------------------------------
+  # dm (비공개 DM 전송)
+  # -------------------------------
   def dm(to_acct, message)
     begin
       puts "[마스토돈] → @#{to_acct} DM 전송"
@@ -150,7 +174,7 @@ class MastodonClient
   end
 
   # -------------------------------
-  # 인증 / 환경검증
+  # 인증 / 환경 검증
   # -------------------------------
   def me
     @client.verify_credentials.acct
