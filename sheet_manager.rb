@@ -1,10 +1,7 @@
 # ============================================
-# sheet_manager.rb
-# Google Sheets 데이터 관리 유틸
+# sheet_manager.rb (추가 메서드 포함 버전)
 # ============================================
-# encoding: UTF-8
 require 'google/apis/sheets_v4'
-require 'time'
 
 class SheetManager
   attr_reader :service, :sheet_id
@@ -14,90 +11,60 @@ class SheetManager
     @sheet_id = sheet_id
   end
 
+  # -----------------------------
+  # 시트 범위 읽기
+  # -----------------------------
   def read_range(range)
-    result = @service.get_spreadsheet_values(@sheet_id, range)
-    result.values || []
+    response = @service.get_spreadsheet_values(@sheet_id, range)
+    response.values || []
   rescue => e
-    puts "[에러] 시트 읽기 실패: #{range} (#{e.message})"
+    puts "[에러] 시트 읽기 실패 (#{range}): #{e.message}"
     []
   end
 
-  def update_range(range, values)
-    body = Google::Apis::SheetsV4::ValueRange.new(values: values)
-    @service.update_spreadsheet_value(@sheet_id, range, body, value_input_option: 'USER_ENTERED')
-  rescue => e
-    puts "[에러] 시트 업데이트 실패: #{range} (#{e.message})"
-  end
-
+  # -----------------------------
+  # 특정 셀 업데이트
+  # -----------------------------
   def update_cell(range, value)
-    update_range(range, [[value]])
+    write_range(range, [[value]])
   end
 
-  def append_row(range, row_values)
-    body = Google::Apis::SheetsV4::ValueRange.new(values: [row_values])
+  def write_range(range, values)
+    body = Google::Apis::SheetsV4::ValueRange.new(values: values)
+    @service.update_spreadsheet_value(@sheet_id, range, body, value_input_option: 'RAW')
+  rescue => e
+    puts "[에러] 시트 쓰기 실패 (#{range}): #{e.message}"
+  end
+
+  # -----------------------------
+  # 로그 추가용 append
+  # -----------------------------
+  def append_row(range, values)
+    body = Google::Apis::SheetsV4::ValueRange.new(values: [values])
     @service.append_spreadsheet_value(@sheet_id, range, body, value_input_option: 'USER_ENTERED')
+    puts "[시트] 로그 추가 완료: #{values.inspect}"
   rescue => e
-    puts "[에러] 행 추가 실패: #{range} (#{e.message})"
+    puts "[에러] 로그 추가 실패: #{e.message}"
   end
 
-  def update_player_row(player_name, updated_row)
-    player_rows = read_range('사용자!A2:L')
-    idx = player_rows.find_index { |r| r[0].to_s.strip == player_name.to_s.strip }
-    if idx
-      range = "사용자!A#{idx + 2}:L#{idx + 2}"
-      puts "[DEBUG] 전체 행 업데이트: #{range}"
-      update_range(range, [updated_row])
-    else
-      puts "[경고] 플레이어 '#{player_name}' 데이터를 찾을 수 없습니다."
+  # ======================================================
+  # ✅ 플레이어 검색 기능 (CommandParser에서 호출됨)
+  # ======================================================
+  def get_player(player_id)
+    data = read_range('플레이어!A2:E') # 시트 구조에 맞게 조정
+    headers = ['id', 'name', 'galleon', 'items', 'notes']
+
+    data.each_with_index do |row, idx|
+      next unless row[0] # 빈 행 제외
+      if row[0].to_s.strip == player_id.to_s.strip
+        player = Hash[headers.zip(row)]
+        player['row_number'] = idx + 2 # 실제 행 번호 (A2부터 시작)
+        return player
+      end
     end
-  end
-
-  def get_daily_count(user, date, type)
-    log_rows = read_range('log!A:G')
-    log_rows.count { |r| r[2] == user && r[0]&.start_with?(date) && r[1] == type }
-  rescue => e
-    puts "[에러] 일일 카운트 조회 실패: #{e.message}"
-    0
-  end
-
-  def log_command(user, type, detail = nil)
-    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-    append_row('log!A:G', [timestamp, type, user, '', detail, '', ''])
-  rescue => e
-    puts "[에러] 로그 기록 실패: #{e.message}"
-  end
-
-  def read_cell(range)
-    result = @service.get_spreadsheet_values(@sheet_id, range)
-    (result.values || [[]]).flatten.first
-  rescue => e
-    puts "[에러] 셀 읽기 실패: #{range} (#{e.message})"
-    nil
-  end
-
-  # --- 추가: get_player / find_user ------------------------
-  def get_player(username)
-    rows = read_range('사용자!A2:L')
-    row = rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
-    return nil unless row
-    {
-      id: row[0],
-      display: row[1],
-      galleons: row[2].to_i,
-      items: row[3].to_s.split(','),
-      last_action: row[4],
-      house: row[5]
-    }
+    nil # 없을 경우 nil 반환
   rescue => e
     puts "[에러] get_player 실패: #{e.message}"
-    nil
-  end
-
-  def find_user(username)
-    rows = read_range('사용자!A2:L')
-    rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
-  rescue => e
-    puts "[에러] find_user 실패: #{e.message}"
     nil
   end
 end
