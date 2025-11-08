@@ -1,93 +1,203 @@
+# encoding: UTF-8
+require_relative 'commands/buy_command'
+require_relative 'commands/transfer_item_command'
+require_relative 'commands/transfer_galleons_command'
+require_relative 'commands/use_item_command'
+require_relative 'commands/pouch_command'
+require_relative 'commands/tarot_command'
+require_relative 'commands/bet_command'
+require_relative 'commands/dice_command'
+require_relative 'commands/coin_command'
+require_relative 'commands/yn_command'
+
 # ============================================
-# TAROT_DATA (78장 풀세트) – 완전판
+# command_parser.rb
+# 상점봇 명령어 파서 및 분기 처리 (TAROT 78장 완전판)
 # ============================================
 
-TAROT_DATA = {
-  # --- Major Arcana (22) ---
-  "THE FOOL" => "순수한 마음으로 새로운 모험을 시작할 때라네. 망설이지 말고 발을 내딛게, 학생.",
-  "THE MAGICIAN" => "지금이 바로 손재주를 발휘할 때라네. 가진 걸 믿고 써먹어보게.",
-  "THE HIGH PRIESTESS" => "겉보다 속을 봐야 할 때라네. 조용히 듣고 관찰하게.",
-  "THE EMPRESS" => "풍요로움이 넘치는 시기라네. 마음을 열고 주변과 나누게.",
-  "THE EMPEROR" => "책임감 있게 자리를 지켜야 할 때라네. 네가 중심을 잡아야 하지.",
-  "THE HIEROPHANT" => "배움에는 끝이 없다네. 전통 속에서 해답을 찾아보게.",
-  "THE LOVERS" => "선택의 순간이라네. 마음이 진짜 원하는 걸 따라가게.",
-  "THE CHARIOT" => "의지와 집중으로 돌파해야 할 때라네. 흔들리지 말게, 학생.",
-  "STRENGTH" => "진짜 힘은 온화함에서 나온다네. 조급하지 않게 마음을 다스리게.",
-  "THE HERMIT" => "혼자 있는 시간 속에 답이 있다네. 등불을 켜고 내면을 들여다보게.",
-  "WHEEL OF FORTUNE" => "운명의 수레바퀴가 돈다네. 이번엔 바람이 어디로 불지 모르지.",
-  "JUSTICE" => "공정하게 판단해야 할 때라네. 감정은 잠시 접어두게.",
-  "THE HANGED MAN" => "잠시 멈춰보게. 다른 각도에서 보면 세상이 달라진다네.",
-  "DEATH" => "끝이 있어야 새 시작이 있지. 두려워 말고 털고 일어나게.",
-  "TEMPERANCE" => "균형을 잡아야 한다네. 너무 많지도 적지도 않게 조절하게.",
-  "THE DEVIL" => "유혹이 다가오네, 학생. 하지만 스스로 묶이지 말게.",
-  "THE TOWER" => "모래성처럼 무너질 수도 있지. 하지만 잔해 위에서 새 출발을 하게.",
-  "THE STAR" => "별빛이 아직 남았구먼. 희망을 잃지 말게.",
-  "THE MOON" => "착각과 진실이 뒤섞여 있네. 확신은 잠시 미뤄두게.",
-  "THE SUN" => "햇살이 쨍하구먼. 지금은 웃어도 좋은 때라네.",
-  "JUDGEMENT" => "심판의 나팔이 울린다네. 과거를 정리하고 다시 일어설 차례라네.",
-  "THE WORLD" => "모든 것이 제자리에 돌아왔구먼. 완성의 기쁨을 누리게, 학생.",
+module CommandParser
+  TAROT_DATA = {
+    # --- Major Arcana (22) ---
+    "THE FOOL" => "순수한 마음으로 새로운 모험을 시작할 때라네. 망설이지 말고 발을 내딛게, 학생.",
+    "THE MAGICIAN" => "지금이 바로 손재주를 발휘할 때라네. 가진 걸 믿고 써먹어보게.",
+    "THE HIGH PRIESTESS" => "겉보다 속을 봐야 할 때라네. 조용히 듣고 관찰하게.",
+    "THE EMPRESS" => "풍요로움이 넘치는 시기라네. 마음을 열고 주변과 나누게.",
+    "THE EMPEROR" => "책임감 있게 자리를 지켜야 할 때라네. 네가 중심을 잡아야 하지.",
+    "THE HIEROPHANT" => "배움에는 끝이 없다네. 전통 속에서 해답을 찾아보게.",
+    "THE LOVERS" => "선택의 순간이라네. 마음이 진짜 원하는 걸 따라가게.",
+    "THE CHARIOT" => "의지와 집중으로 돌파해야 할 때라네. 흔들리지 말게, 학생.",
+    "STRENGTH" => "진짜 힘은 온화함에서 나온다네. 조급하지 않게 마음을 다스리게.",
+    "THE HERMIT" => "혼자 있는 시간 속에 답이 있다네. 등불을 켜고 내면을 들여다보게.",
+    "WHEEL OF FORTUNE" => "운명의 수레바퀴가 돈다네. 이번엔 바람이 어디로 불지 모르지.",
+    "JUSTICE" => "공정하게 판단해야 할 때라네. 감정은 잠시 접어두게.",
+    "THE HANGED MAN" => "잠시 멈춰보게. 다른 각도에서 보면 세상이 달라진다네.",
+    "DEATH" => "끝이 있어야 새 시작이 있지. 두려워 말고 털고 일어나게.",
+    "TEMPERANCE" => "균형을 잡아야 한다네. 너무 많지도 적지도 않게 조절하게.",
+    "THE DEVIL" => "유혹이 다가오네, 학생. 하지만 스스로 묶이지 말게.",
+    "THE TOWER" => "모래성처럼 무너질 수도 있지. 하지만 잔해 위에서 새 출발을 하게.",
+    "THE STAR" => "별빛이 아직 남았구먼. 희망을 잃지 말게.",
+    "THE MOON" => "착각과 진실이 뒤섞여 있네. 확신은 잠시 미뤄두게.",
+    "THE SUN" => "햇살이 쨍하구먼. 지금은 웃어도 좋은 때라네.",
+    "JUDGEMENT" => "심판의 나팔이 울린다네. 과거를 정리하고 다시 일어설 차례라네.",
+    "THE WORLD" => "모든 것이 제자리에 돌아왔구먼. 완성의 기쁨을 누리게, 학생.",
 
-  # --- Minor Arcana: Wands (불, 창조, 열정) ---
-  "ACE OF WANDS" => "불씨가 피어오르네. 새 아이디어가 네 손끝에 깃들었다네.",
-  "TWO OF WANDS" => "앞날을 내다보게. 결정의 시기라네, 학생.",
-  "THREE OF WANDS" => "기다림의 끝이 다가오네. 준비한 만큼 보답을 받을 걸세.",
-  "FOUR OF WANDS" => "축하할 일이 있구먼. 작은 성취를 즐기게.",
-  "FIVE OF WANDS" => "의견 충돌이 있겠네. 하지만 경쟁 속에서 성장한다네.",
-  "SIX OF WANDS" => "승리의 행진이라네. 모두가 자네를 주목하고 있네.",
-  "SEVEN OF WANDS" => "수세에 몰렸구먼. 그래도 물러서지 말게, 끝까지 버티는 거야.",
-  "EIGHT OF WANDS" => "빠른 변화가 몰려온다네. 행동할 때라네.",
-  "NINE OF WANDS" => "피곤하겠지만 아직 끝이 아니네. 마지막까지 지켜내게.",
-  "TEN OF WANDS" => "너무 많은 짐을 짊어졌구먼. 잠시 내려놓을 줄도 알아야지.",
-  "PAGE OF WANDS" => "열정적인 전령이라네. 새로운 일에 도전할 마음이 가득하네.",
-  "KNIGHT OF WANDS" => "불같은 추진력이 느껴지네. 하지만 성급함은 경계하게.",
-  "QUEEN OF WANDS" => "당당하고 매력적인 인물이로군. 자신감을 잃지 말게.",
-  "KING OF WANDS" => "리더십이 필요한 순간이라네. 결단하고 이끌어야 할 때라네.",
+    # --- Wands (불, 창조, 열정) ---
+    "ACE OF WANDS" => "불씨가 피어오르네. 새 아이디어가 네 손끝에 깃들었다네.",
+    "TWO OF WANDS" => "앞날을 내다보게. 결정의 시기라네, 학생.",
+    "THREE OF WANDS" => "기다림의 끝이 다가오네. 준비한 만큼 보답을 받을 걸세.",
+    "FOUR OF WANDS" => "축하할 일이 있구먼. 작은 성취를 즐기게.",
+    "FIVE OF WANDS" => "의견 충돌이 있겠네. 하지만 경쟁 속에서 성장한다네.",
+    "SIX OF WANDS" => "승리의 행진이라네. 모두가 자네를 주목하고 있네.",
+    "SEVEN OF WANDS" => "수세에 몰렸구먼. 그래도 물러서지 말게, 끝까지 버티는 거야.",
+    "EIGHT OF WANDS" => "빠른 변화가 몰려온다네. 행동할 때라네.",
+    "NINE OF WANDS" => "피곤하겠지만 아직 끝이 아니네. 마지막까지 지켜내게.",
+    "TEN OF WANDS" => "너무 많은 짐을 짊어졌구먼. 잠시 내려놓을 줄도 알아야지.",
+    "PAGE OF WANDS" => "열정적인 전령이라네. 새로운 일에 도전할 마음이 가득하네.",
+    "KNIGHT OF WANDS" => "불같은 추진력이 느껴지네. 하지만 성급함은 경계하게.",
+    "QUEEN OF WANDS" => "당당하고 매력적인 인물이로군. 자신감을 잃지 말게.",
+    "KING OF WANDS" => "리더십이 필요한 순간이라네. 결단하고 이끌어야 할 때라네.",
 
-  # --- Cups (물, 감정, 사랑) ---
-  "ACE OF CUPS" => "감정의 샘이 터졌구먼. 사랑이 피어날 조짐이라네.",
-  "TWO OF CUPS" => "좋은 인연이 찾아온다네. 상호 존중이 열쇠일세.",
-  "THREE OF CUPS" => "함께 웃을 일이 있구먼. 친구들과 기쁨을 나누게.",
-  "FOUR OF CUPS" => "마음이 지쳐있네. 지금은 잠시 쉬어가도 좋네.",
-  "FIVE OF CUPS" => "잃은 것만 보이네? 남은 컵도 바라보게, 학생.",
-  "SIX OF CUPS" => "추억이 향기를 풍기네. 과거의 정이 다시 스며든다네.",
-  "SEVEN OF CUPS" => "환상 속에서 헤매지 말게. 진짜 원하는 걸 고르게.",
-  "EIGHT OF CUPS" => "이제 미련을 두지 말게. 떠나야 할 때라네.",
-  "NINE OF CUPS" => "소원이 이루어진다네. 마음껏 누려보게.",
-  "TEN OF CUPS" => "평화와 조화가 찾아오네. 진심으로 웃을 수 있을 때라네.",
-  "PAGE OF CUPS" => "감성이 풍부하구먼. 예술적인 영감이 찾아오고 있다네.",
-  "KNIGHT OF CUPS" => "낭만적인 제안이 다가오네. 하지만 현실도 잊지 말게.",
-  "QUEEN OF CUPS" => "따뜻하고 이해심 깊은 사람이로군. 감정의 파도 속에서도 중심을 잡게.",
-  "KING OF CUPS" => "감정의 주인이라네. 냉정함과 따뜻함을 함께 품게.",
+    # --- Cups (물, 감정, 사랑) ---
+    "ACE OF CUPS" => "감정의 샘이 터졌구먼. 사랑이 피어날 조짐이라네.",
+    "TWO OF CUPS" => "좋은 인연이 찾아온다네. 상호 존중이 열쇠일세.",
+    "THREE OF CUPS" => "함께 웃을 일이 있구먼. 친구들과 기쁨을 나누게.",
+    "FOUR OF CUPS" => "마음이 지쳐있네. 지금은 잠시 쉬어가도 좋네.",
+    "FIVE OF CUPS" => "잃은 것만 보이네? 남은 컵도 바라보게, 학생.",
+    "SIX OF CUPS" => "추억이 향기를 풍기네. 과거의 정이 다시 스며든다네.",
+    "SEVEN OF CUPS" => "환상 속에서 헤매지 말게. 진짜 원하는 걸 고르게.",
+    "EIGHT OF CUPS" => "이제 미련을 두지 말게. 떠나야 할 때라네.",
+    "NINE OF CUPS" => "소원이 이루어진다네. 마음껏 누려보게.",
+    "TEN OF CUPS" => "평화와 조화가 찾아오네. 진심으로 웃을 수 있을 때라네.",
+    "PAGE OF CUPS" => "감성이 풍부하구먼. 예술적인 영감이 찾아오고 있다네.",
+    "KNIGHT OF CUPS" => "낭만적인 제안이 다가오네. 하지만 현실도 잊지 말게.",
+    "QUEEN OF CUPS" => "따뜻하고 이해심 깊은 사람이로군. 감정의 파도 속에서도 중심을 잡게.",
+    "KING OF CUPS" => "감정의 주인이라네. 냉정함과 따뜻함을 함께 품게.",
 
-  # --- Swords (공기, 사고, 진실, 갈등) ---
-  "ACE OF SWORDS" => "진실이 번쩍하네. 이성의 칼로 길을 열게.",
-  "TWO OF SWORDS" => "갈림길에서 머뭇거리고 있구먼. 결단이 필요하다네.",
-  "THREE OF SWORDS" => "가슴이 저미는 아픔이 있겠네. 하지만 진실은 언제나 통증을 동반하지.",
-  "FOUR OF SWORDS" => "지친 정신을 쉬게 하게. 잠시 휴식이 약이라네.",
-  "FIVE OF SWORDS" => "이긴 듯 보여도 상처가 남는 싸움이라네. 현명하게 물러설 줄도 알아야지.",
-  "SIX OF SWORDS" => "고통을 떠나 평온을 찾아가는 여정이라네.",
-  "SEVEN OF SWORDS" => "누군가 속임수를 쓰고 있구먼. 눈을 부릅뜨게.",
-  "EIGHT OF SWORDS" => "스스로 묶여있네. 하지만 그 끈은 자네 손에 있다네.",
-  "NINE OF SWORDS" => "불안과 후회가 밤을 지배하겠네. 하지만 새벽은 반드시 오지.",
-  "TEN OF SWORDS" => "끝장 같지만, 다시 일어설 기회라네. 완전한 끝은 없지.",
-  "PAGE OF SWORDS" => "호기심 많은 학생이로군. 지식을 향한 갈증이 느껴진다네.",
-  "KNIGHT OF SWORDS" => "단호하고 빠른 자라네. 하지만 무모함은 금물이지.",
-  "QUEEN OF SWORDS" => "이성적이고 냉철한 인물이로군. 감정보다 진실을 중시하네.",
-  "KING OF SWORDS" => "법과 논리의 상징이라네. 명확한 판단으로 일처리하게.",
+    # --- Swords (공기, 사고, 진실, 갈등) ---
+    "ACE OF SWORDS" => "진실이 번쩍하네. 이성의 칼로 길을 열게.",
+    "TWO OF SWORDS" => "갈림길에서 머뭇거리고 있구먼. 결단이 필요하다네.",
+    "THREE OF SWORDS" => "가슴이 저미는 아픔이 있겠네. 하지만 진실은 언제나 통증을 동반하지.",
+    "FOUR OF SWORDS" => "지친 정신을 쉬게 하게. 잠시 휴식이 약이라네.",
+    "FIVE OF SWORDS" => "이긴 듯 보여도 상처가 남는 싸움이라네. 현명하게 물러설 줄도 알아야지.",
+    "SIX OF SWORDS" => "고통을 떠나 평온을 찾아가는 여정이라네.",
+    "SEVEN OF SWORDS" => "누군가 속임수를 쓰고 있구먼. 눈을 부릅뜨게.",
+    "EIGHT OF SWORDS" => "스스로 묶여있네. 하지만 그 끈은 자네 손에 있다네.",
+    "NINE OF SWORDS" => "불안과 후회가 밤을 지배하겠네. 하지만 새벽은 반드시 오지.",
+    "TEN OF SWORDS" => "끝장 같지만, 다시 일어설 기회라네. 완전한 끝은 없지.",
+    "PAGE OF SWORDS" => "호기심 많은 학생이로군. 지식을 향한 갈증이 느껴진다네.",
+    "KNIGHT OF SWORDS" => "단호하고 빠른 자라네. 하지만 무모함은 금물이지.",
+    "QUEEN OF SWORDS" => "이성적이고 냉철한 인물이로군. 감정보다 진실을 중시하네.",
+    "KING OF SWORDS" => "법과 논리의 상징이라네. 명확한 판단으로 일처리하게.",
 
-  # --- Pentacles (땅, 현실, 물질, 노력) ---
-  "ACE OF PENTACLES" => "기회가 눈앞에 있네. 현실적인 성취가 시작된다네.",
-  "TWO OF PENTACLES" => "균형이 필요하네. juggling을 잘해야 한다네, 학생.",
-  "THREE OF PENTACLES" => "협력의 힘이 중요하네. 함께 일할 때 결과가 좋다네.",
-  "FOUR OF PENTACLES" => "손에 쥔 걸 너무 꽉 쥐지 말게. 때로는 나눔이 더 큰 이익을 부르네.",
-  "FIVE OF PENTACLES" => "추운 겨울을 걷는 기분이겠네. 하지만 도움의 손길이 멀지 않다네.",
-  "SIX OF PENTACLES" => "주는 것도, 받는 것도 배움이라네. 균형이 중요하지.",
-  "SEVEN OF PENTACLES" => "인내의 시간이라네. 씨를 뿌렸다면 기다릴 줄도 알아야지.",
-  "EIGHT OF PENTACLES" => "노력은 결코 배신하지 않네. 꾸준히 다듬게.",
-  "NINE OF PENTACLES" => "자립의 시기라네. 스스로 이룬 것의 열매를 맛보게.",
-  "TEN OF PENTACLES" => "유산과 번영이 흐르네. 가족, 안정, 전통이 중심이 된다네.",
-  "PAGE OF PENTACLES" => "배움을 즐기는 학생이로군. 새로운 기술이 자랄 때라네.",
-  "KNIGHT OF PENTACLES" => "성실하고 꾸준한 인물이네. 느리지만 끝까지 간다네.",
-  "QUEEN OF PENTACLES" => "현실적이면서 따뜻한 사람이라네. 돌봄 속에서 풍요가 자라지.",
-  "KING OF PENTACLES" => "성공과 책임의 상징이라네. 자네의 노력이 결실을 맺을 때라네."
-}
+    # --- Pentacles (땅, 현실, 물질, 노력) ---
+    "ACE OF PENTACLES" => "기회가 눈앞에 있네. 현실적인 성취가 시작된다네.",
+    "TWO OF PENTACLES" => "균형이 필요하네. juggling을 잘해야 한다네, 학생.",
+    "THREE OF PENTACLES" => "협력의 힘이 중요하네. 함께 일할 때 결과가 좋다네.",
+    "FOUR OF PENTACLES" => "손에 쥔 걸 너무 꽉 쥐지 말게. 때로는 나눔이 더 큰 이익을 부르네.",
+    "FIVE OF PENTACLES" => "추운 겨울을 걷는 기분이겠네. 하지만 도움의 손길이 멀지 않다네.",
+    "SIX OF PENTACLES" => "주는 것도, 받는 것도 배움이라네. 균형이 중요하지.",
+    "SEVEN OF PENTACLES" => "인내의 시간이라네. 씨를 뿌렸다면 기다릴 줄도 알아야지.",
+    "EIGHT OF PENTACLES" => "노력은 결코 배신하지 않네. 꾸준히 다듬게.",
+    "NINE OF PENTACLES" => "자립의 시기라네. 스스로 이룬 것의 열매를 맛보게.",
+    "TEN OF PENTACLES" => "유산과 번영이 흐르네. 가족, 안정, 전통이 중심이 된다네.",
+    "PAGE OF PENTACLES" => "배움을 즐기는 학생이로군. 새로운 기술이 자랄 때라네.",
+    "KNIGHT OF PENTACLES" => "성실하고 꾸준한 인물이네. 느리지만 끝까지 간다네.",
+    "QUEEN OF PENTACLES" => "현실적이면서 따뜻한 사람이라네. 돌봄 속에서 풍요가 자라지.",
+    "KING OF PENTACLES" => "성공과 책임의 상징이라네. 자네의 노력이 결실을 맺을 때라네."
+  }
+
+  MAX_BETS_PER_DAY = 3
+
+  def self.parse(mastodon_client, sheet_manager, notification)
+    begin
+      content_raw = notification.dig("status", "content") || ""
+      account_info = notification["account"] || {}
+      sender = account_info["acct"] || ""
+      display = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
+      content = clean_html(content_raw)
+
+      case content
+      when /\[구매\/(.+?)\]/
+        message = BuyCommand.new(sender, $1.strip, sheet_manager).execute
+
+      when /\[양도\/(.+?)\/@(.+?)\]/
+        message = TransferItemCommand.new(sender, $2.strip.split('@').first, $1.strip, sheet_manager).execute
+
+      when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
+        amount = Regexp.last_match(1).to_i
+        target = Regexp.last_match(2)
+        player_rows = sheet_manager.read_range('player!A2:D')
+        sender_row  = player_rows.find { |r| r[1]&.include?(sender) }
+        target_row  = player_rows.find { |r| r[1]&.include?(target) }
+
+        if sender_row.nil?
+          mastodon_client.reply(notification, "이봐, 학생. 아직 가게 장부에 이름이 없네. 먼저 등록부터 해야지?")
+          return
+        elsif target_row.nil?
+          mastodon_client.reply(notification, "그 이름은 내 장부에 없는데? 다시 한번 확인해보게, 학생.")
+          return
+        end
+
+        sender_balance = sender_row[2].to_i
+        if sender_balance < amount
+          mastodon_client.reply(notification, "그 돈으론 택도 없어, 학생. 지갑 좀 채우고 오게나.")
+          return
+        end
+
+        sender_row[2] = (sender_balance - amount).to_s
+        target_row[2] = (target_row[2].to_i + amount).to_s
+
+        sender_index = player_rows.index(sender_row) + 2
+        target_index = player_rows.index(target_row) + 2
+        sheet_manager.update_cell("player!C#{sender_index}", sender_row[2])
+        sheet_manager.update_cell("player!C#{target_index}", target_row[2])
+
+        sheet_manager.append_row("log!A:G", [
+          Time.now.strftime('%Y-%m-%d %H:%M:%S'),
+          "양도", sender, target, "#{amount}G", "갈레온 양도 완료"
+        ])
+
+        mastodon_client.reply(notification,
+          "#{display}(@#{sender}) 학생이 머리띠를 곱게 싸서 보냈다네. #{target}(@#{target}) 그 학생한테 잘 전달해뒀지!"
+        )
+
+      when /\[사용\/(.+?)\]/
+        message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
+
+      when /\[주머니\]/
+        message = PouchCommand.new(sender, sheet_manager).execute
+
+      when /\[타로\]/
+        message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
+
+      when /\[베팅\/(\d+)\]/
+        today = Time.now.strftime('%Y-%m-%d')
+        bet_count = sheet_manager.get_daily_count(sender, today, "BET")
+        message = if bet_count >= MAX_BETS_PER_DAY
+          "오늘은 그만해야지, 학생. 하루에 #{MAX_BETS_PER_DAY}번이면 충분하지 않겠나?"
+        else
+          sheet_manager.log_command(sender, "BET", $1.to_i)
+          BetCommand.new(sender, $1.to_i, sheet_manager).execute
+        end
+
+      when /\[(주사위|d\d+)\]/i
+        message = DiceCommand.run(mastodon_client, notification)
+      when /\[(yes|no|yesno|ㅇㅇ|ㄴㄴ)\]/i
+        message = YnCommand.run(mastodon_client, notification)
+      when /\[(동전|coin)\]/i
+        message = CoinCommand.run(mastodon_client, notification)
+      else
+        return
+      end
+
+      mastodon_client.reply(notification, message) if message
+    rescue => e
+      puts "[에러] 명령어 처리 실패: #{e.message}"
+      puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+    end
+  end
+
+  def self.clean_html(html)
+    html.gsub(/<[^>]*>/, '').gsub('&nbsp;', ' ').strip
+  end
+end
