@@ -1,5 +1,5 @@
 # ============================================
-# main.rb (Shop Bot - HTTP 기반 안정 버전)
+# main.rb (Shop Bot - HTTP 기반 안정 버전, 이전 알림 무시 완전판)
 # ============================================
 # encoding: UTF-8
 require 'bundler/setup'
@@ -31,6 +31,7 @@ BASE_URL        = ENV['MASTODON_BASE_URL']
 TOKEN           = ENV['MASTODON_TOKEN']
 SHEET_ID        = ENV['GOOGLE_SHEET_ID']
 CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
+LAST_ID_FILE    = "last_mention_id.txt"
 
 puts "[상점봇] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
@@ -76,17 +77,24 @@ puts "Mentions 폴링 시작 (10초 간격)"
 puts "----------------------------------------"
 
 # =============================
+# 마지막 mention ID 불러오기
+# =============================
+last_checked_id = if File.exist?(LAST_ID_FILE)
+  File.read(LAST_ID_FILE).strip
+else
+  nil
+end
+
+# =============================
 # Mentions 폴링 루프
 # =============================
-last_checked_id = nil
-
 loop do
   begin
     mentions = mastodon_client.get_mentions(limit: 20)
     mentions.sort_by! { |n| n["id"].to_i }
 
     mentions.each do |n|
-      next if n["type"] != "mention"
+      next unless n["type"] == "mention"
       next if last_checked_id && n["id"].to_i <= last_checked_id.to_i
 
       status = n["status"]
@@ -100,6 +108,7 @@ loop do
       puts "  ↳ #{content}"
 
       begin
+        # OpenStruct로 래핑 (CommandParser 호환)
         n["status"]  = OpenStruct.new(status)
         n["account"] = OpenStruct.new(n["account"])
 
@@ -109,7 +118,9 @@ loop do
         puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
       end
 
+      # 마지막 ID 갱신 및 파일에 저장
       last_checked_id = n["id"]
+      File.write(LAST_ID_FILE, last_checked_id)
     end
 
   rescue StandardError => e
