@@ -14,7 +14,6 @@ class SheetManager
     @sheet_id = sheet_id
   end
 
-  # --- 읽기·쓰기 기본기 ------------------------------------
   def read_range(range)
     result = @service.get_spreadsheet_values(@sheet_id, range)
     result.values || []
@@ -41,7 +40,6 @@ class SheetManager
     puts "[에러] 행 추가 실패: #{range} (#{e.message})"
   end
 
-  # --- 유저 관련 ------------------------------------------
   def update_player_row(player_name, updated_row)
     player_rows = read_range('사용자!A2:L')
     idx = player_rows.find_index { |r| r[0].to_s.strip == player_name.to_s.strip }
@@ -54,7 +52,6 @@ class SheetManager
     end
   end
 
-  # --- 로그 유틸 ------------------------------------------
   def get_daily_count(user, date, type)
     log_rows = read_range('log!A:G')
     log_rows.count { |r| r[2] == user && r[0]&.start_with?(date) && r[1] == type }
@@ -78,7 +75,7 @@ class SheetManager
     nil
   end
 
-  # --- ✅ 추가: 봇이 찾는 메서드 ----------------------------
+  # --- 추가: get_player / find_user ------------------------
   def get_player(username)
     rows = read_range('사용자!A2:L')
     row = rows.find { |r| r[0].to_s.strip == username.to_s.strip || r[1].to_s.include?(username) }
