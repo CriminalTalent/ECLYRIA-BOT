@@ -1,6 +1,6 @@
 # ============================================
 # mastodon_client.rb
-# Mastodon API Wrapper (HTTP + RateLimit 완전 대응)
+# Mastodon API Wrapper (HTTP + RateLimit 완전 대응 안정화 버전)
 # ============================================
 # encoding: UTF-8
 require 'mastodon'
@@ -27,7 +27,7 @@ class MastodonClient
   end
 
   # --------------------------------------------
-  # Mentions 가져오기 (since_id 지원)
+  # Mentions 가져오기 (since_id 지원, 헤더 미포함 버전)
   # --------------------------------------------
   def get_mentions(limit: 20, since_id: nil)
     uri = URI.join(@base_url, '/api/v1/notifications')
@@ -119,7 +119,7 @@ class MastodonClient
   end
 
   # --------------------------------------------
-  # get_mentions_with_headers (RateLimit 대응)
+  # ✅ get_mentions_with_headers (RateLimit 대응 완전판)
   # --------------------------------------------
   def get_mentions_with_headers(limit: 20, since_id: nil)
     uri = URI.join(@base_url, '/api/v1/notifications')
