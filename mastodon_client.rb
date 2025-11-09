@@ -1,6 +1,6 @@
 # ============================================
 # mastodon_client.rb
-# Mastodon API Wrapper (HTTP 안정 버전)
+# Mastodon API Wrapper (HTTP 안정 + RateLimit 완전 버전)
 # ============================================
 # encoding: UTF-8
 require 'mastodon'
@@ -121,5 +121,42 @@ class MastodonClient
   rescue => e
     puts "[에러] perform_request 실패: #{e.message}"
     nil
+  end
+
+  # --------------------------------------------
+  # 하위호환용: get_mentions_with_headers (RateLimit 대응)
+  # --------------------------------------------
+  def get_mentions_with_headers(limit: 20, since_id: nil)
+    uri = URI.join(@base_url, '/api/v1/notifications')
+    params = { limit: limit }
+    params[:since_id] = since_id if since_id
+    uri.query = URI.encode_www_form(params)
+
+    request = Net::HTTP::Get.new(uri)
+    request['Authorization'] = "Bearer #{@token}"
+
+    response = Net::HTTP.start(uri.hostname, uri.port,
+                               use_ssl: uri.scheme == 'https') do |http|
+      http.read_timeout = 15
+      http.open_timeout = 5
+      http.request(request)
+    end
+
+    unless response.is_a?(Net::HTTPSuccess)
+      puts "[HTTP 오류] #{response.code} #{response.message}"
+      puts "응답 본문: #{response.body}"
+      return [[], {}]
+    end
+
+    headers = {
+      'x-ratelimit-limit' => response['x-ratelimit-limit'],
+      'x-ratelimit-remaining' => response['x-ratelimit-remaining'],
+      'x-ratelimit-reset' => response['x-ratelimit-reset']
+    }
+    data = JSON.parse(response.body)
+    [data, headers]
+  rescue => e
+    puts "[에러] get_mentions_with_headers 실패: #{e.message}"
+    [[], {}]
   end
 end
