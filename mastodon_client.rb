@@ -1,6 +1,6 @@
 # ============================================
 # mastodon_client.rb
-# Mastodon API Wrapper (HTTP 안정 + RateLimit 완전 버전)
+# Mastodon API Wrapper (HTTP + RateLimit 완전 대응)
 # ============================================
 # encoding: UTF-8
 require 'mastodon'
@@ -38,8 +38,7 @@ class MastodonClient
     request = Net::HTTP::Get.new(uri)
     request['Authorization'] = "Bearer #{@token}"
 
-    response = Net::HTTP.start(uri.hostname, uri.port,
-                               use_ssl: uri.scheme == 'https') do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
       http.read_timeout = 15
       http.open_timeout = 5
       http.request(request)
@@ -85,27 +84,23 @@ class MastodonClient
   end
 
   # --------------------------------------------
-  # 직접 호출용 API 요청 (필요시)
+  # 직접 호출용 API 요청 (보조 함수)
   # --------------------------------------------
   def perform_request(method, path, params = {})
     uri = URI.join(@base_url, path)
     uri.query = URI.encode_www_form(params) if method == :get && !params.empty?
 
     request = case method
-              when :get
-                Net::HTTP::Get.new(uri)
-              when :post
-                Net::HTTP::Post.new(uri)
-              else
-                raise "지원되지 않는 HTTP 메서드: #{method}"
+              when :get then Net::HTTP::Get.new(uri)
+              when :post then Net::HTTP::Post.new(uri)
+              else raise "지원되지 않는 HTTP 메서드: #{method}"
               end
 
     request['Authorization'] = "Bearer #{@token}"
     request['Content-Type'] = 'application/json'
     request.body = params.to_json if method == :post
 
-    response = Net::HTTP.start(uri.hostname, uri.port,
-                               use_ssl: uri.scheme == 'https') do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
       http.read_timeout = 15
       http.open_timeout = 5
       http.request(request)
@@ -124,7 +119,7 @@ class MastodonClient
   end
 
   # --------------------------------------------
-  # 하위호환용: get_mentions_with_headers (RateLimit 대응)
+  # get_mentions_with_headers (RateLimit 대응)
   # --------------------------------------------
   def get_mentions_with_headers(limit: 20, since_id: nil)
     uri = URI.join(@base_url, '/api/v1/notifications')
@@ -135,8 +130,7 @@ class MastodonClient
     request = Net::HTTP::Get.new(uri)
     request['Authorization'] = "Bearer #{@token}"
 
-    response = Net::HTTP.start(uri.hostname, uri.port,
-                               use_ssl: uri.scheme == 'https') do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
       http.read_timeout = 15
       http.open_timeout = 5
       http.request(request)
@@ -153,6 +147,7 @@ class MastodonClient
       'x-ratelimit-remaining' => response['x-ratelimit-remaining'],
       'x-ratelimit-reset' => response['x-ratelimit-reset']
     }
+
     data = JSON.parse(response.body)
     [data, headers]
   rescue => e
