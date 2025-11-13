@@ -1,157 +1,110 @@
-# ============================================
-# mastodon_client.rb
-# Mastodon API Wrapper (HTTP + RateLimit 완전 대응 안정화 버전)
-# ============================================
-# encoding: UTF-8
-require 'mastodon'
-require 'json'
 require 'net/http'
+require 'json'
 require 'uri'
 
 class MastodonClient
-  attr_reader :base_url, :token, :client
-
   def initialize(base_url:, token:)
     @base_url = base_url
     @token = token
-    @client = Mastodon::REST::Client.new(base_url: base_url, bearer_token: token)
   end
 
-  # --------------------------------------------
-  # 환경 변수 검증
-  # --------------------------------------------
-  def self.validate_environment
-    required = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID]
-    missing = required.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
-    missing.empty?
-  end
-
-  # --------------------------------------------
-  # Mentions 가져오기 (since_id 지원, 헤더 미포함 버전)
-  # --------------------------------------------
-  def get_mentions(limit: 20, since_id: nil)
-    uri = URI.join(@base_url, '/api/v1/notifications')
-    params = { limit: limit }
-    params[:since_id] = since_id if since_id
-    uri.query = URI.encode_www_form(params)
-
-    request = Net::HTTP::Get.new(uri)
-    request['Authorization'] = "Bearer #{@token}"
-
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
-      http.read_timeout = 15
-      http.open_timeout = 5
-      http.request(request)
-    end
-
-    unless response.is_a?(Net::HTTPSuccess)
-      puts "[HTTP 오류] #{response.code} #{response.message}"
-      puts "응답 본문: #{response.body}"
-      return []
-    end
-
-    JSON.parse(response.body)
-  rescue => e
-    puts "[에러] Mentions 가져오기 실패: #{e.message}"
-    []
-  end
-
-  # --------------------------------------------
-  # 마스토돈에 새 글 작성 (Toot)
-  # --------------------------------------------
-  def post(status)
-    @client.create_status(status)
-    puts "[마스토돈] 게시 완료 → #{status[0..40]}..."
-  rescue => e
-    puts "[에러] 게시 실패: #{e.message}"
-  end
-
-  # --------------------------------------------
-  # 멘션에 대한 답글 작성
-  # --------------------------------------------
-  def reply(notification, message)
-    status = notification["status"] || notification.status
-    account = notification["account"] || notification.account
-    acct = account["acct"] rescue account.acct
-    in_reply_to_id = status["id"] rescue status.id
-    content = "@#{acct} #{message}"
-
-    @client.create_status(content, in_reply_to_id: in_reply_to_id)
-    puts "[마스토돈] → @#{acct} 에게 응답 전송"
-    puts "[DEBUG] 응답 전송 성공 (#{message[0..50]})"
-  rescue => e
-    puts "[에러] 응답 전송 실패: #{e.message}"
-  end
-
-  # --------------------------------------------
-  # 직접 호출용 API 요청 (보조 함수)
-  # --------------------------------------------
-  def perform_request(method, path, params = {})
+  # ===========================
+  # 🔥 기본 요청 공통 처리
+  # ===========================
+  def request(method:, path:, params: {})
     uri = URI.join(@base_url, path)
-    uri.query = URI.encode_www_form(params) if method == :get && !params.empty?
+    uri.query = URI.encode_www_form(params) if method == :get && params.any?
 
-    request = case method
-              when :get then Net::HTTP::Get.new(uri)
-              when :post then Net::HTTP::Post.new(uri)
-              else raise "지원되지 않는 HTTP 메서드: #{method}"
-              end
-
-    request['Authorization'] = "Bearer #{@token}"
-    request['Content-Type'] = 'application/json'
-    request.body = params.to_json if method == :post
-
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
-      http.read_timeout = 15
-      http.open_timeout = 5
-      http.request(request)
-    end
-
-    unless response.is_a?(Net::HTTPSuccess)
-      puts "[HTTP 오류] #{response.code} #{response.message}"
-      puts "응답 본문: #{response.body}"
-      return nil
-    end
-
-    JSON.parse(response.body)
-  rescue => e
-    puts "[에러] perform_request 실패: #{e.message}"
-    nil
-  end
-
-  # --------------------------------------------
-  # ✅ get_mentions_with_headers (RateLimit 대응 완전판)
-  # --------------------------------------------
-  def get_mentions_with_headers(limit: 20, since_id: nil)
-    uri = URI.join(@base_url, '/api/v1/notifications')
-    params = { limit: limit }
-    params[:since_id] = since_id if since_id
-    uri.query = URI.encode_www_form(params)
-
-    request = Net::HTTP::Get.new(uri)
-    request['Authorization'] = "Bearer #{@token}"
-
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
-      http.read_timeout = 15
-      http.open_timeout = 5
-      http.request(request)
-    end
-
-    unless response.is_a?(Net::HTTPSuccess)
-      puts "[HTTP 오류] #{response.code} #{response.message}"
-      puts "응답 본문: #{response.body}"
-      return [[], {}]
-    end
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == "https"
 
     headers = {
-      'x-ratelimit-limit' => response['x-ratelimit-limit'],
-      'x-ratelimit-remaining' => response['x-ratelimit-remaining'],
-      'x-ratelimit-reset' => response['x-ratelimit-reset']
+      "Authorization" => "Bearer #{@token}"
     }
 
-    data = JSON.parse(response.body)
-    [data, headers]
-  rescue => e
-    puts "[에러] get_mentions_with_headers 실패: #{e.message}"
-    [[], {}]
+    begin
+      response = http.request(request_object(method, uri, headers))
+    rescue => e
+      puts "[HTTP 오류] #{e.class}: #{e.message}"
+      return [nil, {}]
+    end
+
+    # Rate-limit 헤더 수집
+    rate_headers = {
+      limit:    response["x-ratelimit-limit"],
+      remaining: response["x-ratelimit-remaining"],
+      reset:    response["x-ratelimit-reset"]
+    }
+
+    # JSON parse 시도
+    body =
+      begin
+        JSON.parse(response.body)
+      rescue
+        {}
+      end
+
+    # 429 감지
+    if response.code == "429"
+      puts "[경고] 429 Too Many Requests"
+      puts "응답: #{response.body}"
+    end
+
+    [body, rate_headers]
+  end
+
+  def request_object(method, uri, headers)
+    case method
+    when :get
+      Net::HTTP::Get.new(uri, headers)
+    when :post
+      Net::HTTP::Post.new(uri, headers)
+    else
+      raise "Unsupported HTTP method #{method}"
+    end
+  end
+
+  # ===========================
+  # 🔥 멘션 읽기 (Headers 포함)
+  # ===========================
+  def get_mentions_with_headers(limit: 20, since_id: nil)
+    params = { limit: limit }
+    params[:since_id] = since_id if since_id
+
+    path = "/api/v1/notifications"
+    body, headers = request(method: :get, path: path, params: params)
+
+    return [[], headers] unless body.is_a?(Array)
+
+    mentions = body.select { |n| n["type"] == "mention" }
+
+    [mentions, headers]
+  end
+
+  # ===========================
+  # 🔥 답글쓰기
+  # ===========================
+  def post_status(status, reply_to_id: nil, visibility: "public")
+    path = "/api/v1/statuses"
+    uri = URI.join(@base_url, path)
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == "https"
+
+    req = Net::HTTP::Post.new(uri)
+    req["Authorization"] = "Bearer #{@token}"
+    req.set_form_data({
+      status: status,
+      in_reply_to_id: reply_to_id,
+      visibility: visibility
+    })
+
+    begin
+      response = http.request(req)
+      JSON.parse(response.body)
+    rescue => e
+      puts "[HTTP POST 오류] #{e.message}"
+      {}
+    end
   end
 end
