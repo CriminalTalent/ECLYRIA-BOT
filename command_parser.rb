@@ -106,6 +106,7 @@ module CommandParser
     "KING OF PENTACLES" => "성공과 책임의 상징이라네. 자네의 노력이 결실을 맺을 때라네."
   }
 
+  
   MAX_BETS_PER_DAY = 3
 
   def self.parse(mastodon_client, sheet_manager, notification)
@@ -117,7 +118,7 @@ module CommandParser
       content = clean_html(content_raw)
 
       case content
-      when /\[구매\/(.+?)\]/
+      when /\[구매\/(.+?)\]/    # <<<<< 랜덤 메시지 포함 BuyCommand 호출
         message = BuyCommand.new(sender, $1.strip, sheet_manager).execute
 
       when /\[양도\/(.+?)\/@(.+?)\]/
@@ -182,10 +183,13 @@ module CommandParser
 
       when /\[(주사위|d\d+)\]/i
         message = DiceCommand.run(mastodon_client, notification)
+
       when /\[(yes|no|yesno|ㅇㅇ|ㄴㄴ)\]/i
         message = YnCommand.run(mastodon_client, notification)
+
       when /\[(동전|coin)\]/i
         message = CoinCommand.run(mastodon_client, notification)
+
       else
         return
       end
