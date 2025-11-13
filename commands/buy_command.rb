@@ -1,4 +1,7 @@
-# buy_command.rb (시트 구조에 완전 호환된 최신 버전)
+# ============================================
+# commands/buy_command.rb (최종 안정화 버전)
+# ============================================
+
 class BuyCommand
   def initialize(content, student_id, sheet_manager)
     @content = content
@@ -16,57 +19,63 @@ class BuyCommand
   def execute
     puts "[BUY] START user=#{@student_id}, item=#{@item_name}"
 
-    return "[알림] 구매 형식이 올바르지 않습니다. 예: [구매/빵]" unless @item_name
+    return "구매 형식이 잘못되었어요. 예: 구매/빵" unless @item_name
 
+    # -----------------------------------------
     # 1) 플레이어 조회
+    # -----------------------------------------
     player = @sheet_manager.find_user(@student_id)
     unless player
       puts "[BUY] ERROR: player not found"
-      return "#{@student_id}님은 아직 학적부에 등록되지 않았어요! 교수님께 가서 등록 먼저 하세요."
+      return "#{@student_id}님은 아직 학적부에 등록되지 않았어요. 교수님께 가서 등록부터 하고 오세요."
     end
 
     galleons = player[:galleons].to_i
-    inventory = player[:items] ? player[:items].split(",") : []
+    inventory = player[:items].to_s.split(",").map(&:strip)
 
-    # 2) 아이템 정보 찾기
+    # -----------------------------------------
+    # 2) 아이템 정보 가져오기
+    # -----------------------------------------
     item = @sheet_manager.find_item(@item_name)
     unless item
       puts "[BUY] ERROR: item not found"
-      return "[에러] 해당 아이템을 찾을 수 없습니다: #{@item_name}"
+      return "#{@item_name}? 그런 물건은 상점에 없어요."
     end
 
-    # 판매 여부 체크
-    unless item[:sellable]
-      puts "[BUY] ERROR: item not sellable"
-      return "[구매 불가] 이 아이템은 상점에서 판매되지 않습니다."
+    # D열 판매가능 여부
+    sellable = item[:for_sale].to_s.strip.upcase == "TRUE"
+    unless sellable
+      puts "[BUY] BLOCK: item not for sale"
+      return "#{@item_name}은(는) 지금은 판매하지 않는 물건이에요."
     end
 
     price = item[:price].to_i
 
-    # 3) 잔액 체크
+    # -----------------------------------------
+    # 3) 잔액 확인
+    # -----------------------------------------
     if galleons < price
       puts "[BUY] FAIL: not enough galleons"
-      return "[구매 실패] 보유 갈레온이 부족합니다. (현재 #{galleons}개)"
+      return "갈레온이 부족해요. 지금은 #{galleons}개밖에 없어요."
     end
 
-    # 4) 인벤토리 추가
+    # -----------------------------------------
+    # 4) 구매 처리
+    # -----------------------------------------
+    new_galleons = galleons - price
     inventory << @item_name
     new_items = inventory.join(",")
 
-    # 5) 시트 업데이트
-    update_ok = @sheet_manager.update_user(@student_id, {
-      galleons: galleons - price,
+    @sheet_manager.update_user(@student_id, {
+      galleons: new_galleons,
       items: new_items
     })
 
-    unless update_ok
-      puts "[BUY] ERROR: update failed"
-      return "[에러] 구매 처리 중 오류가 발생했습니다."
-    end
+    puts "[BUY] UPDATED: galleons=#{new_galleons}, items=#{new_items}"
 
-    puts "[BUY] UPDATED: galleons=#{galleons - price}, items=#{new_items}"
-
-    # 6) 성공 메시지
-    "[구매 완료] #{@item_name}을(를) 구입했습니다! (남은 금액: #{galleons - price}갈레온)"
+    # -----------------------------------------
+    # 5) 결과 메시지 (RP 톤)
+    # -----------------------------------------
+    "#{@item_name}을(를) 구매했어요. 남은 금액은 #{new_galleons}갈레온이에요."
   end
 end
