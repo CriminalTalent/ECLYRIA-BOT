@@ -119,7 +119,7 @@ module CommandParser
 
       case content
       when /\[구매\/(.+?)\]/    # <<<<< 랜덤 메시지 포함 BuyCommand 호출
-        message = BuyCommand.new(sender, $1.strip, sheet_manager).execute
+        message = BuyCommand.new(content, sender, sheet_manager).execute
 
       when /\[양도\/(.+?)\/@(.+?)\]/
         message = TransferItemCommand.new(sender, $2.strip.split('@').first, $1.strip, sheet_manager).execute
