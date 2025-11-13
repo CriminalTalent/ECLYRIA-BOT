@@ -2,6 +2,7 @@
 # commands/use_item_command.rb
 # ============================================
 # encoding: UTF-8
+
 class UseItemCommand
   def initialize(student_id, item_name, sheet_manager)
     @student_id = student_id.gsub('@', '')
@@ -10,39 +11,62 @@ class UseItemCommand
   end
 
   def execute
+    # -----------------------------------------
+    # 1) 플레이어 정보 확인
+    # -----------------------------------------
     player = @sheet_manager.find_user(@student_id)
     unless player
       return "#{@student_id}(@#{@student_id})은(는) 아직 학생 등록이 안 되어 있어요~ 교수님께 가서 입학 먼저 하고 오세요!"
     end
 
     inventory = player[:items].to_s.split(",").map(&:strip)
+
     unless inventory.include?(@item_name)
-      return "#{@student_id}(@#{@student_id})은(는) #{@item_name}을(를) 가지고 있지 않아요~"
+      return "#{@item_name}… 그건 지금 주머니 안에 없어요."
     end
 
+    # -----------------------------------------
+    # 2) 아이템 정보 확인
+    # -----------------------------------------
     item = @sheet_manager.find_item(@item_name)
     unless item
-      return "#{@item_name}? 그런 물건 정보는 없네요~"
+      return "#{@item_name}? 그런 물건 정보는 찾을 수 없어요."
     end
 
-    # E열 "사용 및 양도가능" 체크박스 확인
-    is_consumable_str = item[:category].to_s.upcase
-    is_consumable = ["TRUE", "O", "YES", "Y"].include?(is_consumable_str)
+    # 시트 E열: 사용/양도 가능
+    can_use = item[:can_use].to_s.strip.upcase == "TRUE"
 
-    unless is_consumable
-      return "#{@item_name}은(는) 사용할 수 없는 아이템이에요~"
+    unless can_use
+      return "#{@item_name}은(는) 사용하는 물건이 아니에요~"
     end
 
-    # 소모품이면 제거
+    # -----------------------------------------
+    # 3) 인벤토리에서 제거
+    # -----------------------------------------
     inventory.delete_at(inventory.index(@item_name))
-    @sheet_manager.update_user(@student_id, { items: inventory.join(",") })
+    @sheet_manager.update_user(@student_id, {
+      items: inventory.join(",")
+    })
 
-    # B열 설명 출력
-    description = item[:description].to_s.strip
-    if description.empty?
-      return "#{@student_id}(@#{@student_id})이(가) #{@item_name}을(를) 사용했어요!"
+    # -----------------------------------------
+    # 4) 설명 랜덤 출력 기능
+    # -----------------------------------------
+    raw_desc = item[:description].to_s.strip
+
+    if raw_desc.empty?
+      desc = nil
     else
-      return "#{@student_id}(@#{@student_id})이(가) #{@item_name}을(를) 사용했어요!\n#{description}"
+      parts = raw_desc.include?("/") ? raw_desc.split("/").map(&:strip) : [raw_desc]
+      desc = parts.sample
+    end
+
+    # -----------------------------------------
+    # 5) 결과 출력 (RP 톤)
+    # -----------------------------------------
+    if desc
+      return "#{@student_id}(@#{@student_id})이(가) #{item[:name]}을(를) 사용했어요.\n#{desc}"
+    else
+      return "#{@student_id}(@#{@student_id})이(가) #{item[:name]}을(를) 사용했어요!"
     end
   end
 end
