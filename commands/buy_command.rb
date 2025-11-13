@@ -1,87 +1,62 @@
-# ============================================
-# commands/buy_command.rb (랜덤 메시지 기능 포함 완전판)
-# ============================================
-# encoding: UTF-8
-
+# buy_command.rb
 class BuyCommand
-  def initialize(student_id, item_name, sheet_manager)
-    @student_id = student_id.gsub('@', '')
-    @item_name = item_name.strip
+  def initialize(content, student_id, sheet_manager)
+    @content = content
+    @student_id = student_id
     @sheet_manager = sheet_manager
+    parse
   end
 
-  # --------------------------------------------
-  # "/" 로 구분된 설명에서 랜덤 문장 뽑기
-  # --------------------------------------------
-  def pick_random_message(description)
-    return "" if description.nil? || description.strip.empty?
-
-    list = description.split("/").map(&:strip)
-    list.reject!(&:empty?)
-    return "" if list.empty?
-
-    list.sample
+  def parse
+    # 예: [구매/온갖 맛이 나는 젤리]
+    match = @content.match(/\[구매\/(.+?)\]/)
+    @item_name = match[1].strip if match
   end
 
   def execute
-    # --------------------------------------------
-    # 1) 플레이어 정보 확인
-    # --------------------------------------------
+    puts "[BUY] START user=#{@student_id}, item=#{@item_name}"
+
+    return "[알림] 구매 형식이 올바르지 않습니다. 예: [구매/빵]" unless @item_name
+
+    # 1) 유저 찾기
     player = @sheet_manager.find_user(@student_id)
     unless player
-      return "#{@student_id}(@#{@student_id})은(는) 아직 학생 등록이 안 되어 있어요~ 교수님께 가서 입학 먼저 하고 오세요!"
+      puts "[BUY] ERROR: player not found"
+      return "[에러] 플레이어 정보를 찾을 수 없습니다."
     end
+    puts "[BUY] FOUND PLAYER: #{player.inspect}"
 
-    if player[:galleons].to_i < 0
-      return "#{@student_id}(@#{@student_id})은(는) 빚이 있어서 구매가 안 돼요! 갈레온부터 갚고 오세요~"
-    end
+    # 유저 정보
+    row = player[:row]
+    galleons = player[:galleons].to_i
+    inventory = player[:items] ? player[:items].split(",") : []
 
-    # --------------------------------------------
-    # 2) 아이템 정보 확인
-    # --------------------------------------------
+    # 2) 아이템 찾기
     item = @sheet_manager.find_item(@item_name)
     unless item
-      return "#{@item_name}? 그건 우리 가게엔 없어요~ 다른 걸 한번 골라보세요!"
+      puts "[BUY] ERROR: item not found"
+      return "[에러] 해당 아이템을 찾을 수 없습니다: #{@item_name}"
     end
-
-    # 판매 여부: O, TRUE, YES, Y 허용
-    for_sale = item[:for_sale].to_s.upcase
-    unless ["O", "TRUE", "YES", "Y"].include?(for_sale)
-      return "#{@item_name}은(는) 지금 판매 중이 아니에요~ 다음에 다시 찾아주세요!"
-    end
+    puts "[BUY] FOUND ITEM: #{item.inspect}"
 
     price = item[:price].to_i
-    galleons = player[:galleons].to_i
 
-    # --------------------------------------------
-    # 3) 잔액 확인
-    # --------------------------------------------
+    # 3) 돈이 부족한지 체크
     if galleons < price
-      return "#{@student_id}(@#{@student_id})은(는) 갈레온이 #{price - galleons}개 부족해요~ 지금 가진 건 #{galleons}개뿐이에요."
+      puts "[BUY] FAIL: not enough galleons (#{galleons} < #{price})"
+      return "[구매 실패] 보유 갈레온이 부족합니다."
     end
 
-    # --------------------------------------------
-    # 4) 구매 처리
-    # --------------------------------------------
-    new_galleons = galleons - price
-    inventory = player[:items].to_s.split(",").map(&:strip)
+    # 4) 인벤토리 추가
     inventory << @item_name
 
-    @sheet_manager.update_user(@student_id, {
-      galleons: new_galleons,
-      items: inventory.join(",")
-    })
+    # 5) 시트 업데이트
+    new_galleons = galleons - price
+    @sheet_manager.update_user(row, new_galleons, inventory.join(","))
 
-    # --------------------------------------------
-    # 5) 랜덤 설명 메시지 선택
-    # --------------------------------------------
-    random_msg = pick_random_message(item[:description])
+    puts "[BUY] UPDATED: galleons=#{new_galleons}, items=#{inventory.join(",")}"
 
-    # 설명이 없으면 기본 멘트 출력
-    if random_msg.empty?
-      return "#{@student_id}(@#{@student_id})이(가) #{@item_name}을 샀어요! #{price}갈레온이에요~ 남은 돈은 #{new_galleons}갈레온이에요."
-    else
-      return "#{@student_id}(@#{@student_id})이(가) #{@item_name}을 샀어요!\n#{random_msg}"
-    end
+    # 6) 성공 메시지
+    "[구매 완료] #{@item_name}을(를) 구입했습니다! (남은 금액: #{new_galleons}갈레온)"
   end
 end
