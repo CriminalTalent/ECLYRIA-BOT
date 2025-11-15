@@ -33,8 +33,11 @@ class UseItemCommand
       return "#{@item_name}? 그런 물건 정보는 찾을 수 없어요."
     end
 
-    # 시트 E열: 사용/양도 가능
-    can_use = item[:can_use].to_s.strip.upcase == "TRUE"
+    # 시트 E열: 사용/양도 가능 (:usable 키 사용)
+    raw_flag = item[:usable]
+
+    # true(boolean) 이거나, "TRUE" 문자열이면 사용 가능으로 처리
+    can_use = (raw_flag == true || raw_flag.to_s.strip.upcase == "TRUE")
 
     unless can_use
       return "#{@item_name}은(는) 사용하는 물건이 아니에요~"
@@ -51,14 +54,18 @@ class UseItemCommand
     # -----------------------------------------
     # 4) 설명 랜덤 출력 기능
     # -----------------------------------------
-    raw_desc = item[:description].to_s.strip
+    raw_desc = item[:description].to_s
+      
+    desc =
+      if raw_desc.include?("/")
+        # "A/B/C" → ["A", "B", "C"] → 하나 랜덤
+        raw_desc.split("/").map(&:strip).reject(&:empty?).sample
+      else
+        raw_desc.strip
+      end
+    
+    desc = nil if desc.to_s.strip.empty?
 
-    if raw_desc.empty?
-      desc = nil
-    else
-      parts = raw_desc.include?("/") ? raw_desc.split("/").map(&:strip) : [raw_desc]
-      desc = parts.sample
-    end
 
     # -----------------------------------------
     # 5) 결과 출력 (RP 톤)

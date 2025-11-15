@@ -41,15 +41,30 @@ class BuyCommand
       puts "[BUY] ERROR: item not found"
       return "#{@item_name}? 그런 물건은 상점에 없어요."
     end
-
-    # D열 판매가능 여부
-    sellable = item[:for_sale].to_s.strip.upcase == "TRUE"
+    
+    # 랜덤 설명 처리 -------------------------------------
+    description_raw = item[:description].to_s
+    
+    # 설명 내에 "A/B/C" 형태가 있으면 랜덤 선택
+    description =
+      if description_raw.include?("/")
+        choices = description_raw.split("/").map(&:strip)
+        choices.sample  # ← 여기서 랜덤 선택됨!
+      else
+        description_raw
+      end
+    
+    # D열 판매가능 여부 (sellable 키)
+    raw_flag = item[:sellable]
+    sellable = (raw_flag == true || raw_flag.to_s.strip.upcase == "TRUE")
+    
     unless sellable
-      puts "[BUY] BLOCK: item not for sale"
+      puts "[BUY] BLOCK: item not for sale (sellable=#{raw_flag.inspect})"
       return "#{@item_name}은(는) 지금은 판매하지 않는 물건이에요."
     end
-
+    
     price = item[:price].to_i
+
 
     # -----------------------------------------
     # 3) 잔액 확인

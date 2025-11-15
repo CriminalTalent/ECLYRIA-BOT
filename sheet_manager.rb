@@ -39,11 +39,18 @@ class SheetManager
       next if row[0].nil?
       if row[0].to_s.strip == student_id.to_s.strip
         return {
-          id: row[0],
-          name: row[1],
-          galleons: row[2],
-          items: row[3],
-          row: idx + 2
+          id:       row[0], # A열: 학번/ID
+          name:     row[1], # B열: 이름
+          galleons: row[2], # C열: 갈레온
+          items:    row[3], # D열: 소지품
+          # ⚠ 여기부터는 네 시트 구조에 맞게 열 인덱스 확인!
+          # E열: 마지막타로날짜
+          last_tarot_date: row[9],
+          # F열: 마지막베팅날짜
+          last_bet_date:   row[4],
+          # G열: 마지막베팅횟수
+          last_bet_count:  row[11],
+          row:      idx + 2
         }
       end
     end
@@ -51,6 +58,9 @@ class SheetManager
   end
 
   # -------------------------------
+  # 플레이어 업데이트
+  # -------------------------------
+    # -------------------------------
   # 플레이어 업데이트
   # -------------------------------
   def update_user(student_id, updates = {})
@@ -65,6 +75,15 @@ class SheetManager
         update_cell("사용자!C#{row}", v)
       when :items
         update_cell("사용자!D#{row}", v)
+      when :last_tarot_date
+        # E열: 마지막타로날짜
+        update_cell("사용자!E#{row}", v)
+      when :last_bet_date
+        # E열: 마지막베팅날짜
+        update_cell("사용자!E#{row}", v)
+      when :last_bet_count
+        # L열: 마지막베팅횟수
+        update_cell("사용자!L#{row}", v)
       end
     end
     true
@@ -93,5 +112,21 @@ class SheetManager
       end
     end
     nil
+  end
+
+  def log_command(user, kind, value = nil, detail = "")
+    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+
+    row = [
+      timestamp,      # A열: 시간
+      kind,           # B열: 명령 타입 (TAROT, BET, 양도 등)
+      user,           # C열: 사용자
+      value.to_s,     # D열: 값 (카드 이름, 금액 등)
+      detail.to_s,    # E열: 상세 설명
+      ""              # F열: 여분 (양도 로그와 컬럼 수 맞추기용)
+    ]
+
+    # 기존에 잘 되던 패턴과 동일하게 A:G 사용
+    append_row("log!A:G", row)
   end
 end

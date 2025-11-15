@@ -1,4 +1,5 @@
 # encoding: UTF-8
+require 'time'
 require_relative 'commands/buy_command'
 require_relative 'commands/transfer_item_command'
 require_relative 'commands/transfer_galleons_command'
@@ -16,6 +17,10 @@ require_relative 'commands/yn_command'
 # ============================================
 
 module CommandParser
+  @@last_reply_at = {}
+
+  COOLDOWN_SECONDS = 30  # 같은 유저에게 30초 안에 한 번만 답글
+
   TAROT_DATA = {
     # --- Major Arcana (22) ---
     "THE FOOL" => "순수한 마음으로 새로운 모험을 시작할 때라네. 망설이지 말고 발을 내딛게, 학생.",
@@ -106,95 +111,129 @@ module CommandParser
     "KING OF PENTACLES" => "성공과 책임의 상징이라네. 자네의 노력이 결실을 맺을 때라네."
   }
 
-  
   MAX_BETS_PER_DAY = 3
+
+  # -----------------------------------
+  # 유저별 30초 쿨타임 reply 헬퍼
+  # -----------------------------------
+    # -----------------------------------
+  # 유저별 30초 쿨타임 reply 헬퍼
+  # -----------------------------------
+  def self.safe_reply(mastodon_client, notification, acct, text, visibility: "unlisted")
+    return if text.nil? || text.to_s.strip.empty?
+
+    now  = Time.now
+    last = @@last_reply_at[acct]
+
+    if last && (now - last) < COOLDOWN_SECONDS
+      diff = (now - last).round(1)
+      puts "[REPLY-SKIP] @#{acct} #{diff}s 이내에 이미 답글 전송됨 → 이번에는 스킵"
+      return
+    end
+
+    @@last_reply_at[acct] = now
+
+    # 여기서 '무엇에 답글을 달지'를 정확히 구한다
+    status_id = nil
+
+    if notification.is_a?(Hash)
+      # 알림(Hash) 구조: { "id" => notif_id, "status" => { "id" => status_id, ... } }
+      status_id = notification.dig("status", "id") || notification["id"]
+    elsif notification.respond_to?(:status) && notification.status.respond_to?(:id)
+      # OpenStruct 형태 등: notif.status.id
+      status_id = notification.status.id
+    elsif notification.respond_to?(:id)
+      # 그냥 status 객체가 넘어온 경우
+      status_id = notification.id
+    else
+      # 최후의 수단: 문자열로
+      status_id = notification.to_s
+    end
+
+    begin
+      mastodon_client.post_status(text, reply_to_id: status_id, visibility: visibility)
+      # 여기서는 굳이 "성공" 로그 안 찍어도 됨
+      # (성공/실패 로그는 mastodon_client.post_status 내부에서 처리)
+    rescue => e
+      puts "[REPLY-ERROR] @#{acct} 답글 중 에러: #{e.class} - #{e.message}"
+    end
+  end
+
 
   def self.parse(mastodon_client, sheet_manager, notification)
     begin
-      content_raw = notification.dig("status", "content") || ""
-      account_info = notification["account"] || {}
-      sender = account_info["acct"] || ""
-      display = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
-      content = clean_html(content_raw)
+      content_raw   = notification.dig("status", "content") || ""
+      account_info  = notification["account"] || {}
+      sender        = account_info["acct"] || ""
+      display       = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
+      content       = clean_html(content_raw)
 
-      case content
-      when /\[구매\/(.+?)\]/    # <<<<< 랜덤 메시지 포함 BuyCommand 호출
-        message = BuyCommand.new(content, sender, sheet_manager).execute
+      message = nil
 
-      when /\[양도\/(.+?)\/@(.+?)\]/
-        message = TransferItemCommand.new(sender, $2.strip.split('@').first, $1.strip, sheet_manager).execute
+            case content
+            when /\[구매\/(.+?)\]/    # BuyCommand 호출
+              message = BuyCommand.new(content, sender, sheet_manager).execute
+              if message == :player_not_found
+                puts "[BUY] ERROR: player not found (@#{sender}) → 마스토돈 답글 생략"
+                return
+              end
+            
+            # ✅ 1) 갈레온 양도: 두 번째 토큰이 '갈레온'인 경우
+            when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
+              amount = Regexp.last_match(1).to_i
+              target_acct = Regexp.last_match(2).strip.split('@').first
+            
+              # transfer_galleons_command.rb 에 맞게 커맨드 객체로 위임
+              # (new(보내는 사람, 받는 사람, 금액, sheet_manager) 라고 가정)
+              message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
+            
+            # ✅ 2) 일반 아이템 양도: [양도/아이템명/@타겟]
+            when /\[양도\/(.+?)\/@(.+?)\]/
+              item_name   = $1.strip
+              target_acct = $2.strip.split('@').first
+              message = TransferItemCommand.new(sender, target_acct, item_name, sheet_manager).execute
+            
+            when /\[사용\/(.+?)\]/
+              message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
+            
+            when /\[주머니\]/
+              message = PouchCommand.new(sender, sheet_manager).execute
+            
+            when /\[타로\]/
+              message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
+            
+            when /\[베팅\/(\d+)\]/
+              amount  = Regexp.last_match(1).to_i
+              message = BetCommand.new(sender, amount, sheet_manager).execute
 
-      when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
-        amount = Regexp.last_match(1).to_i
-        target = Regexp.last_match(2)
-        player_rows = sheet_manager.read_range('player!A2:D')
-        sender_row  = player_rows.find { |r| r[1]&.include?(sender) }
-        target_row  = player_rows.find { |r| r[1]&.include?(target) }
+                        
+            when /\[(주사위|d\d+|\d+d)\]/i
+              DiceCommand.run(mastodon_client, notification)
+              return
+            
+            when /\[(yes|no|yesno|ㅇㅇ|ㄴㄴ)\]/i
+              YnCommand.run(mastodon_client, notification)
+              return
+            
+            when /\[(동전|coin)\]/i
+              CoinCommand.run(mastodon_client, notification)
+              return
+            
+            when /\[YN\]/i
+              YnCommand.run(mastodon_client, notification)
+              return
 
-        if sender_row.nil?
-          mastodon_client.reply(notification, "이봐, 학생. 아직 가게 장부에 이름이 없네. 먼저 등록부터 해야지?")
-          return
-        elsif target_row.nil?
-          mastodon_client.reply(notification, "그 이름은 내 장부에 없는데? 다시 한번 확인해보게, 학생.")
-          return
-        end
 
-        sender_balance = sender_row[2].to_i
-        if sender_balance < amount
-          mastodon_client.reply(notification, "그 돈으론 택도 없어, 학생. 지갑 좀 채우고 오게나.")
-          return
-        end
+            else
+              return
+            end
 
-        sender_row[2] = (sender_balance - amount).to_s
-        target_row[2] = (target_row[2].to_i + amount).to_s
 
-        sender_index = player_rows.index(sender_row) + 2
-        target_index = player_rows.index(target_row) + 2
-        sheet_manager.update_cell("player!C#{sender_index}", sender_row[2])
-        sheet_manager.update_cell("player!C#{target_index}", target_row[2])
-
-        sheet_manager.append_row("log!A:G", [
-          Time.now.strftime('%Y-%m-%d %H:%M:%S'),
-          "양도", sender, target, "#{amount}G", "갈레온 양도 완료"
-        ])
-
-        mastodon_client.reply(notification,
-          "#{display}(@#{sender}) 학생이 머리띠를 곱게 싸서 보냈다네. #{target}(@#{target}) 그 학생한테 잘 전달해뒀지!"
-        )
-
-      when /\[사용\/(.+?)\]/
-        message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
-
-      when /\[주머니\]/
-        message = PouchCommand.new(sender, sheet_manager).execute
-
-      when /\[타로\]/
-        message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
-
-      when /\[베팅\/(\d+)\]/
-        today = Time.now.strftime('%Y-%m-%d')
-        bet_count = sheet_manager.get_daily_count(sender, today, "BET")
-        message = if bet_count >= MAX_BETS_PER_DAY
-          "오늘은 그만해야지, 학생. 하루에 #{MAX_BETS_PER_DAY}번이면 충분하지 않겠나?"
-        else
-          sheet_manager.log_command(sender, "BET", $1.to_i)
-          BetCommand.new(sender, $1.to_i, sheet_manager).execute
-        end
-
-      when /\[(주사위|d\d+)\]/i
-        message = DiceCommand.run(mastodon_client, notification)
-
-      when /\[(yes|no|yesno|ㅇㅇ|ㄴㄴ)\]/i
-        message = YnCommand.run(mastodon_client, notification)
-
-      when /\[(동전|coin)\]/i
-        message = CoinCommand.run(mastodon_client, notification)
-
-      else
-        return
+      # 공통 답글 처리 (쿨타임 + 공백 체크)
+      if message && message != :player_not_found
+        safe_reply(mastodon_client, notification, sender, message)
       end
 
-      mastodon_client.reply(notification, message) if message
     rescue => e
       puts "[에러] 명령어 처리 실패: #{e.message}"
       puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"

@@ -1,6 +1,9 @@
 source 'https://rubygems.org'
-ruby '3.2.3'
+ruby '3.4.5'
 
+gem 'mastodon'
+gem 'ostruct'
+gem 'fiddle'
 gem 'mastodon-api', '~> 1.1', require: 'mastodon'
 gem 'dotenv'
 gem 'json', '~> 2.7'
