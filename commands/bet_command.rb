@@ -1,88 +1,200 @@
-# commands/bet_command.rb
-# encoding: UTF-8
-require 'date'
+# ============================================
+# sheet_manager.rb (안정화 버전)
+# Google Sheets A1 기반 읽기/쓰기/append 지원
+# ============================================
+require 'google/apis/sheets_v4'
 
-class BetCommand
-  MAX_BETS_PER_DAY = 3
+class SheetManager
+  attr_reader :service, :sheet_id
 
-  def initialize(student_id, amount, sheet_manager)
-    @student_id    = student_id       # 예: "Test"
-    @amount        = amount.to_i
-    @sheet_manager = sheet_manager
+  USERS_SHEET      = '사용자'.freeze
+  PROFESSOR_SHEET  = '교수'.freeze
+  SHOP_LOG_SHEET   = '상점로그'.freeze
+
+  def initialize(service, sheet_id)
+    @service  = service
+    @sheet_id = sheet_id
   end
 
-  def execute
-    # 1) 사용자 정보 가져오기 (get_player → find_user 로 변경)
-    user = @sheet_manager.find_user(@student_id)
-    unless user
-      puts "[DEBUG] 플레이어 찾을 수 없음: #{@student_id}"
-      return "#{@student_id}(@#{@student_id})은(는) 학적부에 없어요~ 교수님께 가서 등록 먼저 하세요."
+  # ------------------------------
+  # 기본 read/write/append
+  # ------------------------------
+  def read(sheet_name, a1 = 'A:Z')
+    range = a1_range(sheet_name, a1)
+    result = service.get_spreadsheet_values(sheet_id, range)
+    result.values || []
+  end
+
+  def write(sheet_name, a1, values)
+    range = a1_range(sheet_name, a1)
+    body = Google::Apis::SheetsV4::ValueRange.new(values: values)
+    service.update_spreadsheet_value(
+      sheet_id,
+      range,
+      body,
+      value_input_option: 'USER_ENTERED'
+    )
+  end
+
+  def append(sheet_name, row)
+    range = a1_range(sheet_name, 'A:Z')
+    body = Google::Apis::SheetsV4::ValueRange.new(values: [row])
+    service.append_spreadsheet_value(
+      sheet_id,
+      range,
+      body,
+      value_input_option: 'USER_ENTERED'
+    )
+  end
+
+  # ============================================================
+  # 사용자 찾기 (상점/교수/전투 시스템 공통)
+  # ============================================================
+  def find_user(acct)
+    rows = read(USERS_SHEET)
+    header = rows.first || []
+
+    # "사용자 ID" 컬럼 찾기
+    id_col = header.index("사용자 ID") || header.index("id") || header.index("ID") || header.index("acct")
+    return nil unless id_col
+
+    rows[1..].each do |r|
+      next if r.nil? || r[id_col].nil?
+      return convert_user_row(header, r) if r[id_col].to_s.strip == acct.to_s.strip
     end
+    nil
+  end
 
-    # 2) 오늘 날짜 / 마지막 베팅 정보 -------------------------
-    today          = Date.today.to_s
-    last_bet_date  = user[:last_bet_date].to_s      rescue ""
-    last_bet_count = user[:last_bet_count].to_i     rescue 0
+  # ============================================================
+  # 사용자 업데이트 (해시 → 열 기준 업데이트)
+  # ============================================================
+  def update_user(acct, updates)
+    rows = read(USERS_SHEET)
+    header = rows.first || []
 
-    # 오늘 베팅 횟수 계산
-    bet_count =
-      if last_bet_date == today
-        last_bet_count
-      else
-        0
+    # "사용자 ID" 컬럼 찾기
+    id_col = header.index("사용자 ID") || header.index("id") || header.index("ID") || header.index("acct")
+    return false unless id_col
+
+    rows.each_with_index do |row, idx|
+      next if idx == 0
+      next unless row[id_col].to_s.strip == acct.to_s.strip
+
+      updates.each do |key, value|
+        # 영어 키를 한글 헤더로 변환
+        header_name = case key.to_sym
+                      when :id then "사용자 ID"
+                      when :name then "이름"
+                      when :galleons then "갈레온"
+                      when :items then "아이템"
+                      when :last_bet_date then "마지막베팅날짜"
+                      when :bet_count then "마지막베팅횟수"
+                      when :house then "기숙사"
+                      when :hp then "HP"
+                      when :attack then "공격력"
+                      when :attendance_date then "출석날짜"
+                      when :last_tarot_date then "마지막타로날짜"
+                      when :house_points then "기숙사점수"
+                      else key.to_s
+                      end
+
+        col = header.index(header_name)
+        next unless col
+
+        row[col] = value
       end
 
-    if bet_count >= MAX_BETS_PER_DAY
-      return "#{@student_id}(@#{@student_id})은(는) 오늘은 이미 #{MAX_BETS_PER_DAY}번이나 베팅했어요~ 내일 다시 도전해보세요!"
+      write(USERS_SHEET, "A#{idx+1}:Z#{idx+1}", [row])
+      return true
     end
+    false
+  end
 
-    # 3) 잔액 / 베팅 금액 검증 -------------------------------
-    galleons = user[:galleons].to_i
+  # ============================================================
+  # 아이템 찾기
+  # ============================================================
+  def find_item(item_name)
+    rows = read('상품')
+    header = rows.first || []
 
-    if galleons < 0
-      return "#{@student_id}(@#{@student_id})은(는) 갈레온이 마이너스 상태라 베팅이 불가능해요."
+    name_col = header.index("상품명") || header.index("이름") || header.index("name")
+    return nil unless name_col
+
+    rows[1..].each do |r|
+      next if r.nil? || r[name_col].nil?
+      if r[name_col].to_s.strip == item_name.to_s.strip
+        return convert_item_row(header, r)
+      end
     end
+    nil
+  end
 
-    if @amount < 1 || @amount > 20
-      return "베팅은 1에서 20갈레온까지만 가능해요~"
+  # ============================================================
+  # 행(row) → 해시 변환 (사용자)
+  # ============================================================
+  def convert_user_row(header, row)
+    data = {}
+    header.each_with_index do |h, i|
+      # 한글 헤더를 영어 키로 변환
+      key = case h
+            when "사용자 ID" then :id
+            when "이름" then :name
+            when "갈레온" then :galleons
+            when "아이템" then :items
+            when "마지막베팅날짜" then :last_bet_date
+            when "마지막베팅횟수" then :bet_count
+            when "기숙사" then :house
+            when "HP" then :hp
+            when "공격력" then :attack
+            when "출석날짜" then :attendance_date
+            when "마지막타로날짜" then :last_tarot_date
+            when "기숙사점수" then :house_points
+            else h.to_sym
+            end
+      data[key] = row[i]
     end
+    data
+  end
 
-    if galleons < @amount
-      return "갈레온이 부족해요. 지금은 #{galleons}개밖에 없어요."
+  # ============================================================
+  # 행(row) → 해시 변환 (아이템)
+  # ============================================================
+  def convert_item_row(header, row)
+    data = {}
+    header.each_with_index do |h, i|
+      # 아이템 헤더를 영어 키로 변환
+      key = case h
+            when "상품명" then :name
+            when "가격" then :price
+            when "설명" then :description
+            when "판매가능" then :sellable
+            when "사용가능" then :usable
+            else h.to_sym
+            end
+      data[key] = row[i]
     end
+    data
+  end
 
-    # 4) 베팅 실행 ------------------------------------------
-    multiplier = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5].sample
-    result      = @amount * multiplier
-    new_galleons = galleons + result
-    new_bet_count = bet_count + 1
-
-    # 5) 사용자 정보 업데이트 (잔액 + 마지막베팅날짜/횟수) ----
-    update_result = @sheet_manager.update_user(
-      @student_id,
-      {
-        galleons:        new_galleons,
-        last_bet_date:   today,
-        last_bet_count:  new_bet_count
-      }
-    )
-
-    unless update_result
-      puts "[ERROR] 베팅 결과 업데이트 실패"
-      return "베팅 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요."
-    end
-
-    # 6) 결과 메시지 ----------------------------------------
-    if new_galleons < 0
-      "#{@student_id}(@#{@student_id})이(가) #{@amount}갈레온을 걸었어요!\n" \
-      "결과는 ×#{multiplier}배, #{result >= 0 ? '+' : ''}#{result}갈레온이에요.\n" \
-      "지금 주머니엔 0갈레온, 빚 #{new_galleons.abs}갈레온이 생겼어요... " \
-      "(오늘 #{new_bet_count}/#{MAX_BETS_PER_DAY}회)"
+  # ============================================================
+  # A1 → 시트명!A1 자동 보정
+  # ============================================================
+  def a1_range(sheet_name, a1)
+    if a1.include?('!')
+      a1
     else
-      "#{@student_id}(@#{@student_id})이(가) #{@amount}갈레온을 걸었어요!\n" \
-      "결과는 ×#{multiplier}배, #{result >= 0 ? '+' : ''}#{result}갈레온이에요.\n" \
-      "지금 주머니엔 #{new_galleons}갈레온이에요~ " \
-      "(오늘 #{new_bet_count}/#{MAX_BETS_PER_DAY}회)"
+      "#{sheet_name}!#{a1}"
     end
+  end
+
+  # ============================================================
+  # 로그 기록 (상점 로그)
+  # ============================================================
+  def log_command(user, kind, value = nil, detail = "")
+    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+    row = [timestamp, kind, user, value.to_s, detail.to_s]
+    append(SHOP_LOG_SHEET, row)
+  rescue => e
+    puts "[로그 오류] #{e.message}"
   end
 end
