@@ -116,9 +116,6 @@ module CommandParser
   # -----------------------------------
   # 유저별 30초 쿨타임 reply 헬퍼
   # -----------------------------------
-    # -----------------------------------
-  # 유저별 30초 쿨타임 reply 헬퍼
-  # -----------------------------------
   def self.safe_reply(mastodon_client, notification, acct, text, visibility: "unlisted")
     return if text.nil? || text.to_s.strip.empty?
 
@@ -170,64 +167,62 @@ module CommandParser
 
       message = nil
 
-            case content
-            when /\[구매\/(.+?)\]/    # BuyCommand 호출
-              message = BuyCommand.new(content, sender, sheet_manager).execute
-              if message == :player_not_found
-                puts "[BUY] ERROR: player not found (@#{sender}) → 마스토돈 답글 생략"
-                return
-              end
-            
-            # ✅ 1) 갈레온 양도: 두 번째 토큰이 '갈레온'인 경우
-            when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
-              amount = Regexp.last_match(1).to_i
-              target_acct = Regexp.last_match(2).strip.split('@').first
-            
-              # transfer_galleons_command.rb 에 맞게 커맨드 객체로 위임
-              # (new(보내는 사람, 받는 사람, 금액, sheet_manager) 라고 가정)
-              message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
-            
-            # ✅ 2) 일반 아이템 양도: [양도/아이템명/@타겟]
-            when /\[양도\/(.+?)\/@(.+?)\]/
-              item_name   = $1.strip
-              target_acct = $2.strip.split('@').first
-              message = TransferItemCommand.new(sender, target_acct, item_name, sheet_manager).execute
-            
-            when /\[사용\/(.+?)\]/
-              message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
-            
-            when /\[주머니\]/
-              message = PouchCommand.new(sender, sheet_manager).execute
-            
-            when /\[타로\]/
-              message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
-            
-            when /\[베팅\/(\d+)\]/
-              amount  = Regexp.last_match(1).to_i
-              message = BetCommand.new(sender, amount, sheet_manager).execute
+      case content
+      when /\[구매\/(.+?)\]/    # BuyCommand 호출
+        message = BuyCommand.new(content, sender, sheet_manager).execute
+        if message == :player_not_found
+          puts "[BUY] ERROR: player not found (@#{sender}) → 마스토돈 답글 생략"
+          return
+        end
+      
+      # ✅ 1) 갈레온 양도: 두 번째 토큰이 '갈레온'인 경우
+      when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
+        amount = Regexp.last_match(1).to_i
+        target_acct = Regexp.last_match(2).strip.split('@').first
+      
+        # transfer_galleons_command.rb 에 맞게 커맨드 객체로 위임
+        # (new(보내는 사람, 받는 사람, 금액, sheet_manager) 라고 가정)
+        message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
+      
+      # ✅ 2) 일반 아이템 양도: [양도/아이템명/@타겟]
+      when /\[양도\/(.+?)\/@(.+?)\]/
+        item_name   = $1.strip
+        target_acct = $2.strip.split('@').first
+        message = TransferItemCommand.new(sender, target_acct, item_name, sheet_manager).execute
+      
+      when /\[사용\/(.+?)\]/
+        message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
+      
+      when /\[주머니\]/
+        message = PouchCommand.new(sender, sheet_manager).execute
+      
+      when /\[타로\]/
+        message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
+      
+      when /\[베팅\/(\d+)\]/
+        amount  = Regexp.last_match(1).to_i
+        message = BetCommand.new(sender, amount, sheet_manager).execute
 
-                        
-            when /\[(주사위|d\d+|\d+d)\]/i
-              DiceCommand.run(mastodon_client, notification)
-              return
-            
-            when /\[(yes|no|yesno|ㅇㅇ|ㄴㄴ)\]/i
-              YnCommand.run(mastodon_client, notification)
-              return
-            
-            when /\[(동전|coin)\]/i
-              CoinCommand.run(mastodon_client, notification)
-              return
-            
-            when /\[YN\]/i
-              YnCommand.run(mastodon_client, notification)
-              return
+      when /\[주사위|d\d+|\d+d\]/i
+        DiceCommand.run(mastodon_client, notification)
+        return
+      
+      when /\[yes|no|yesno|ㅇㅇ|ㄴㄴ\]/i
+        YnCommand.run(mastodon_client, notification)
+        return
+      
+      when /\[동전|coin\]/i
+        CoinCommand.run(mastodon_client, notification)
+        return
+      
+      when /\[YN\]/i
+        YnCommand.run(mastodon_client, notification)
+        return
 
-
-            else
-              return
-            end
-
+      else
+        # 명령어가 없으면 무시 (대사만 있는 경우)
+        return
+      end
 
       # 공통 답글 처리 (쿨타임 + 공백 체크)
       if message && message != :player_not_found
