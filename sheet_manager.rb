@@ -76,7 +76,7 @@ class SheetManager
   end
 
   # ============================================================
-  # 사용자 찾기 (상점/교수/전투 시스템 공통)
+  # 사용자 찾기
   # ============================================================
   def find_user(acct)
     rows = read(USERS_SHEET)
@@ -85,8 +85,8 @@ class SheetManager
     header = rows.first || []
     puts "[FIND_USER] 헤더: #{header.inspect}"
 
-    # "사용자 ID" 또는 "A" 컬럼 찾기
-    id_col = header.index("사용자 ID") || header.index("A") || 0
+    # A열 = 사용자 ID
+    id_col = 0
     
     puts "[FIND_USER] ID 컬럼 인덱스: #{id_col}"
 
@@ -103,40 +103,31 @@ class SheetManager
   end
 
   # ============================================================
-  # 사용자 업데이트 (해시 → 열 기준 업데이트)
+  # 사용자 업데이트
   # ============================================================
   def update_user(acct, updates)
     rows = read(USERS_SHEET)
     header = rows.first || []
 
-    # "사용자 ID" 또는 "A" 컬럼 찾기
-    id_col = header.index("사용자 ID") || header.index("A") || 0
+    id_col = 0  # A열
     
     rows.each_with_index do |row, idx|
       next if idx == 0
       next unless row[id_col].to_s.strip == acct.to_s.strip
 
       updates.each do |key, value|
-        # 영어 키를 한글 헤더로 변환
-        header_name = case key.to_sym
-                      when :id then header[0]  # 첫 번째 컬럼 (사용자 ID)
-                      when :name then "B"
-                      when :galleons then "C"
-                      when :items then "D"
-                      when :last_bet_date then "마지막베팅날짜"
-                      when :bet_count then "마지막베팅횟수"
-                      when :house then "기숙사"
-                      when :hp then "HP"
-                      when :attack then "공격력"
-                      when :attendance_date then "출석날짜"
-                      when :last_tarot_date then "마지막타로날짜"
-                      when :house_points then "기숙사점수"
-                      else key.to_s
-                      end
-
-        col = header.index(header_name)
+        col = case key.to_sym
+              when :id then 0
+              when :name then 1
+              when :galleons then 2
+              when :items then 3
+              when :last_bet_date then 10
+              when :bet_count then 11
+              when :last_tarot_date then 12
+              else nil
+              end
+        
         next unless col
-
         row[col] = value
       end
 
@@ -148,7 +139,7 @@ class SheetManager
   end
 
   # ============================================================
-  # 아이템 찾기 (디버깅 강화)
+  # 아이템 찾기
   # ============================================================
   def find_item(item_name)
     rows = read(ITEMS_SHEET)
@@ -162,8 +153,7 @@ class SheetManager
     puts "[FIND_ITEM] 헤더: #{header.inspect}"
     puts "[FIND_ITEM] 검색 아이템: #{item_name}"
 
-    # A열 = 아이템명
-    name_col = 0
+    name_col = 0  # A열
     
     puts "[FIND_ITEM] 아이템명 컬럼 인덱스: #{name_col}"
 
@@ -190,12 +180,11 @@ class SheetManager
   # ============================================================
   def convert_user_row(header, row)
     {
-      id: row[0],           # A: 사용자 ID
-      name: row[1],         # B: 이름
-      galleons: row[2],     # C: 갈레온
-      items: row[3],        # D: 아이템
-      house: row[4],        # E: 기숙사
-      # 필요한 다른 컬럼들 추가
+      id: row[0],
+      name: row[1],
+      galleons: row[2],
+      items: row[3],
+      house: row[4],
       last_bet_date: row[10],
       bet_count: row[11],
       last_tarot_date: row[12]
@@ -207,12 +196,12 @@ class SheetManager
   # ============================================================
   def convert_item_row(header, row)
     {
-      name: row[0],         # A: 아이템명
-      description: row[1],  # B: 설명
-      price: row[2],        # C: 가격
-      sellable: row[3],     # D: 판매여부 (체크박스)
-      usable: row[4],       # E: 사용 및 양도가능 (체크박스)
-      image_url: row[5]     # F: 아미지URL
+      name: row[0],
+      description: row[1],
+      price: row[2],
+      sellable: row[3],
+      usable: row[4],
+      image_url: row[5]
     }
   end
 
