@@ -1,5 +1,5 @@
 # ============================================
-# commands/use_item_command.rb (멘션 추가 버전)
+# commands/use_item_command.rb (설명 출력 수정)
 # ============================================
 # encoding: UTF-8
 
@@ -11,6 +11,8 @@ class UseItemCommand
   end
 
   def execute
+    puts "[USE] START user=#{@student_id}, item=#{@item_name}"
+    
     # -----------------------------------------
     # 1) 플레이어 정보 확인
     # -----------------------------------------
@@ -20,6 +22,7 @@ class UseItemCommand
     end
 
     inventory = player[:items].to_s.split(",").map(&:strip)
+    puts "[USE] 현재 인벤토리: #{inventory.inspect}"
 
     unless inventory.include?(@item_name)
       return "@#{@student_id} #{@item_name}… 그건 지금 주머니 안에 없어요."
@@ -33,11 +36,15 @@ class UseItemCommand
       return "@#{@student_id} #{@item_name}? 그런 물건 정보는 찾을 수 없어요."
     end
 
-    # E열: 사용 및 양도 가능 (체크박스)
+    puts "[USE] 아이템 정보: #{item.inspect}"
+
+    # 시트 E열: 사용 및 양도 가능 (:usable 키 사용)
     raw_flag = item[:usable]
 
     # true(boolean) 이거나, "TRUE" 문자열이면 사용 가능으로 처리
     can_use = (raw_flag == true || raw_flag.to_s.strip.upcase == "TRUE")
+
+    puts "[USE] 사용가능 여부: #{raw_flag.inspect} → #{can_use}"
 
     unless can_use
       return "@#{@student_id} #{@item_name}은(는) 사용하는 물건이 아니에요~"
@@ -47,19 +54,28 @@ class UseItemCommand
     # 3) 인벤토리에서 제거
     # -----------------------------------------
     inventory.delete_at(inventory.index(@item_name))
+    new_items = inventory.join(",")
+    
     @sheet_manager.update_user(@student_id, {
-      items: inventory.join(",")
+      items: new_items
     })
+
+    puts "[USE] 인벤토리 업데이트: #{new_items}"
 
     # -----------------------------------------
     # 4) 설명 랜덤 출력 기능
     # -----------------------------------------
     raw_desc = item[:description].to_s
+    
+    puts "[USE] 원본 설명: #{raw_desc}"
       
     desc =
       if raw_desc.include?("/")
         # "A/B/C" → ["A", "B", "C"] → 하나 랜덤
-        raw_desc.split("/").map(&:strip).reject(&:empty?).sample
+        choices = raw_desc.split("/").map(&:strip).reject(&:empty?)
+        selected = choices.sample
+        puts "[USE] 랜덤 선택: #{selected}"
+        selected
       else
         raw_desc.strip
       end
@@ -67,12 +83,15 @@ class UseItemCommand
     desc = nil if desc.to_s.strip.empty?
 
     # -----------------------------------------
-    # 5) 결과 출력 (RP 톤 + 멘션)
+    # 5) 결과 출력 (RP 톤 + 멘션 + 설명)
     # -----------------------------------------
-    if desc
-      return "@#{@student_id} #{item[:name]}을(를) 사용했어요.\n#{desc}"
+    if desc && !desc.empty?
+      message = "@#{@student_id} #{@item_name}을(를) 사용했어요.\n\n#{desc}"
     else
-      return "@#{@student_id} #{item[:name]}을(를) 사용했어요!"
+      message = "@#{@student_id} #{@item_name}을(를) 사용했어요!"
     end
+
+    puts "[USE] 최종 메시지: #{message[0..100]}..."
+    return message
   end
 end
