@@ -1,114 +1,88 @@
-# ============================================
-# main_stream.rb (Shop Bot - Streaming 버전)
-# ============================================
-
-require 'bundler/setup'
-require 'dotenv'
-require 'time'
+#!/usr/bin/env ruby
+# encoding: UTF-8
 require 'json'
-require 'ostruct'
-require 'nokogiri'
+require 'net/http'
+require 'uri'
 require 'google/apis/sheets_v4'
-require 'googleauth'
-
-require_relative 'mastodon_client'       # REST (포스트/답글)
-require_relative 'streaming_client'      # Streaming (알림 수신)
+require 'dotenv/load'
+require_relative 'mastodon_client'
 require_relative 'sheet_manager'
 require_relative 'command_parser'
 
-Dotenv.load('.env')
+MASTODON_BASE_URL = ENV["MASTODON_BASE_URL"]
+ACCESS_TOKEN      = ENV["MASTODON_TOKEN"]
+SHEET_ID          = ENV["GOOGLE_SHEET_ID"]
 
-required_envs = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
-missing = required_envs.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
-
-if missing.any?
-  missing.each { |v| puts "[환경변수 누락] #{v}" }
-  exit 1
+if MASTODON_BASE_URL.nil? || ACCESS_TOKEN.nil? || SHEET_ID.nil?
+  puts "[환경변수 오류] .env 파일을 읽지 못했습니다."
+  puts "MASTODON_BASE_URL: #{MASTODON_BASE_URL.inspect}"
+  puts "ACCESS_TOKEN: #{ACCESS_TOKEN.inspect}"
+  puts "SHEET_ID: #{SHEET_ID.inspect}"
+  exit
 end
 
-BASE_URL        = ENV['MASTODON_BASE_URL']
-TOKEN           = ENV['MASTODON_TOKEN']
-SHEET_ID        = ENV['GOOGLE_SHEET_ID']
-CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
+# ---------------------------
+# Google Sheets
+# ---------------------------
+service = Google::Apis::SheetsV4::SheetsService.new
+service.client_options.application_name = "FortunaeFons Shop Bot"
+service.authorization = Google::Auth::ServiceAccountCredentials.make_creds(
+  json_key_io: File.open(ENV["GOOGLE_APPLICATION_CREDENTIALS"]),
+  scope: ["https://www.googleapis.com/auth/spreadsheets"]
+)
 
-puts "[상점봇 Streaming] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
+sheet_manager = SheetManager.new(service, SHEET_ID)
 
-# -----------------------------
-# Google Sheets 연결
-# -----------------------------
-begin
-  scopes = ['https://www.googleapis.com/auth/spreadsheets']
-  creds = Google::Auth::ServiceAccountCredentials.make_creds(
-    json_key_io: File.open(CREDENTIAL_PATH),
-    scope: scopes
-  )
-  creds.fetch_access_token!
+mastodon = MastodonClient.new(
+  base_url: MASTODON_BASE_URL,
+  token: ACCESS_TOKEN
+)
 
-  sheet_service = Google::Apis::SheetsV4::SheetsService.new
-  sheet_service.authorization = creds
+puts "[ShopBot] 실행 준비 완료!"
+puts "Mastodon: #{MASTODON_BASE_URL}"
+puts "Sheet ID:  #{SHEET_ID}"
 
-  sheet_manager = SheetManager.new(sheet_service, SHEET_ID)
-  puts "[Google Sheets] 연결 성공: #{SHEET_ID}"
-rescue => e
-  puts "[Google Sheets 오류] #{e.message}"
-  exit 1
-end
+# ---------------------------
+# Main polling loop (수정 버전)
+# ---------------------------
+processed_ids = Set.new  # 처리한 알림 ID 저장
+last_check_time = Time.now
 
-# -----------------------------
-# Mastodon 클라이언트 (REST + Streaming)
-# -----------------------------
-rest_client      = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
-streaming_client = MastodonStreamingClient.new(base_url: BASE_URL, token: TOKEN)
-
-puts "----------------------------------------"
-puts "상점봇 준비 완료. Streaming으로 멘션 감시 시작"
-puts "----------------------------------------"
-
-loop_count = 0
-
-begin
-  loop do
-    loop_count += 1
-    puts "[STREAM 루프 #{loop_count}] notification 스트림 연결..."
-
-    streaming_client.stream_notifications do |notif|
-      # notif는 Mastodon Notification JSON
-      next unless notif["type"] == "mention"
-      next unless notif["status"]
-
-      status  = notif["status"]
-      account = notif["account"]
-
-      created_at = Time.parse(status["created_at"].to_s).getlocal.strftime('%H:%M:%S')
-      sender     = account["acct"]
-      content    = status["content"].to_s.encode('UTF-8')
-
-      puts "[MENTION] #{created_at} - @#{sender}"
-      puts "  ↳ #{content}"
-
-      begin
-        # 기존 main.rb 에서 n 구조를 흉내냄
-        n = {
-          "id"      => notif["id"].to_s,
-          "type"    => notif["type"],
-          "status"  => OpenStruct.new(status),
-          "account" => OpenStruct.new(account)
-        }
-
-        CommandParser.parse(rest_client, sheet_manager, n)
-      rescue => e
-        puts "[에러] 명령어 실행 중 문제 발생: #{e.class} - #{e.message}"
-        puts e.backtrace.first(5)
+loop do
+  begin
+    notifications, rate = mastodon.notifications
+    
+    notifications.each do |note|
+      next unless note["type"] == "mention"
+      
+      nid = note["id"].to_s
+      
+      # 이미 처리한 알림은 스킵
+      next if processed_ids.include?(nid)
+      
+      # 처리 목록에 추가
+      processed_ids.add(nid)
+      
+      # 메모리 관리: 1000개 넘으면 오래된 것 삭제
+      if processed_ids.size > 1000
+        processed_ids = processed_ids.to_a.last(500).to_set
       end
+      
+      account = note["account"]["acct"]
+      content_raw = note.dig("status", "content") || ""
+      text = content_raw.gsub(/<[^>]+>/, "").strip
+      
+      puts "[MENTION] @#{account}: #{text}"
+      
+      # CommandParser가 내부적으로 응답 처리
+      CommandParser.parse(mastodon, sheet_manager, note)
     end
-
-    # 여기까지 왔다는 건 스트리밍이 끊긴 것
-    puts "[STREAM] 연결 종료됨. 10초 후 재연결"
-    sleep 10
+    
+  rescue => e
+    puts "[오류] #{e.class} - #{e.message}"
+    puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+    sleep 3
   end
-rescue Interrupt
-  puts "\n[종료] Ctrl+C 로 상점봇 Streaming 종료"
-rescue => e
-  puts "[치명적 오류] #{e.class} - #{e.message}"
-  puts e.backtrace.first(10)
+  
+  sleep 3
 end
