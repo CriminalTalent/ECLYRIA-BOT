@@ -1,6 +1,3 @@
-# ============================================
-# commands/pouch_command.rb (간결한 출력)
-# ============================================
 # encoding: UTF-8
 class PouchCommand
   MAX_LENGTH = 450
@@ -13,7 +10,7 @@ class PouchCommand
   def execute
     player = @sheet_manager.find_user(@student_id)
     unless player
-      return "@#{@student_id} 아직 학적부에 없어요~ 교수님께 가서 등록 먼저 하세요!"
+      return "@#{@student_id} 아직 학적부에 없어요~"
     end
 
     galleons = player[:galleons].to_i
