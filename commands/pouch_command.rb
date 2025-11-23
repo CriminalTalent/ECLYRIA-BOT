@@ -18,7 +18,6 @@ class PouchCommand
 
     if items_raw.empty?
       items_display = "없음"
-      item_counts = {}
     else
       items_array = items_raw.split(",").map(&:strip)
       item_counts = Hash.new(0)
@@ -29,36 +28,6 @@ class PouchCommand
       end.join(", ")
     end
 
-    base_message = "@#{@student_id}\n갈레온: #{galleons}개\n아이템: "
-
-    if (base_message + items_display).length <= MAX_LENGTH
-      return base_message + items_display
-    else
-      item_list = item_counts.map do |item, count|
-        count > 1 ? "#{item} x#{count}" : item
-      end
-
-      messages = []
-      messages << base_message
-
-      temp_items = []
-      item_list.each do |item_str|
-        test_line = (temp_items + [item_str]).join(", ")
-
-        if test_line.length > MAX_LENGTH
-          messages << temp_items.join(", ") unless temp_items.empty?
-          temp_items = [item_str]
-        else
-          temp_items << item_str
-        end
-      end
-
-      messages << temp_items.join(", ") unless temp_items.empty?
-
-      messages[0] += messages[1] if messages.length > 1
-      messages.delete_at(1) if messages.length > 1
-
-      return messages
-    end
+    "@#{@student_id}\n갈레온: #{galleons}개\n아이템: #{items_display}"
   end
 end
