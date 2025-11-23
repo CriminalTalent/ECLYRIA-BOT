@@ -1,5 +1,5 @@
 # ============================================
-# commands/use_item_command.rb
+# commands/use_item_command.rb (멘션 추가 버전)
 # ============================================
 # encoding: UTF-8
 
@@ -16,13 +16,13 @@ class UseItemCommand
     # -----------------------------------------
     player = @sheet_manager.find_user(@student_id)
     unless player
-      return "#{@student_id}(@#{@student_id})은(는) 아직 학생 등록이 안 되어 있어요~ 교수님께 가서 입학 먼저 하고 오세요!"
+      return "@#{@student_id} 아직 학생 등록이 안 되어 있어요~ 교수님께 가서 입학 먼저 하고 오세요!"
     end
 
     inventory = player[:items].to_s.split(",").map(&:strip)
 
     unless inventory.include?(@item_name)
-      return "#{@item_name}… 그건 지금 주머니 안에 없어요."
+      return "@#{@student_id} #{@item_name}… 그건 지금 주머니 안에 없어요."
     end
 
     # -----------------------------------------
@@ -30,17 +30,17 @@ class UseItemCommand
     # -----------------------------------------
     item = @sheet_manager.find_item(@item_name)
     unless item
-      return "#{@item_name}? 그런 물건 정보는 찾을 수 없어요."
+      return "@#{@student_id} #{@item_name}? 그런 물건 정보는 찾을 수 없어요."
     end
 
-    # 시트 E열: 사용/양도 가능 (:usable 키 사용)
+    # E열: 사용 및 양도 가능 (체크박스)
     raw_flag = item[:usable]
 
     # true(boolean) 이거나, "TRUE" 문자열이면 사용 가능으로 처리
     can_use = (raw_flag == true || raw_flag.to_s.strip.upcase == "TRUE")
 
     unless can_use
-      return "#{@item_name}은(는) 사용하는 물건이 아니에요~"
+      return "@#{@student_id} #{@item_name}은(는) 사용하는 물건이 아니에요~"
     end
 
     # -----------------------------------------
@@ -66,14 +66,13 @@ class UseItemCommand
     
     desc = nil if desc.to_s.strip.empty?
 
-
     # -----------------------------------------
-    # 5) 결과 출력 (RP 톤)
+    # 5) 결과 출력 (RP 톤 + 멘션)
     # -----------------------------------------
     if desc
-      return "#{@student_id}(@#{@student_id})이(가) #{item[:name]}을(를) 사용했어요.\n#{desc}"
+      return "@#{@student_id} #{item[:name]}을(를) 사용했어요.\n#{desc}"
     else
-      return "#{@student_id}(@#{@student_id})이(가) #{item[:name]}을(를) 사용했어요!"
+      return "@#{@student_id} #{item[:name]}을(를) 사용했어요!"
     end
   end
 end
