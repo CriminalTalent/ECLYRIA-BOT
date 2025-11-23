@@ -1,5 +1,5 @@
 # ============================================
-# commands/pouch_command.rb
+# commands/pouch_command.rb (멘션 추가 버전)
 # ============================================
 # encoding: UTF-8
 class PouchCommand
@@ -13,7 +13,7 @@ class PouchCommand
   def execute
     player = @sheet_manager.find_user(@student_id)
     unless player
-      return "#{@student_id}(@#{@student_id})은(는) 학적부에 없어요~ 교수님께 가서 등록 먼저 하세요!"
+      return "@#{@student_id} 아직 학적부에 없어요~ 교수님께 가서 등록 먼저 하세요!"
     end
 
     galleons = player[:galleons].to_i
@@ -34,13 +34,10 @@ class PouchCommand
       end.join(", ")
     end
 
-    # 기본 메시지 구성
-    base_message = "#{@student_id}(@#{@student_id})의 주머니를 열었어요~\n갈레온: #{galleons}개\n아이템: "
+    # 기본 메시지 구성 (멘션 추가)
+    base_message = "@#{@student_id} 주머니를 열었어요~\n갈레온: #{galleons}개\n아이템: "
 
     # 글자 수 체크 및 분할
-    messages = []
-    current_message = base_message.dup
-
     if (base_message + items_display).length <= MAX_LENGTH
       # 한 번에 전송 가능
       return base_message + items_display
@@ -50,6 +47,7 @@ class PouchCommand
         count > 1 ? "#{item} x#{count}" : item
       end
 
+      messages = []
       messages << base_message
 
       temp_items = []
@@ -69,8 +67,8 @@ class PouchCommand
       messages << temp_items.join(", ") unless temp_items.empty?
 
       # 첫 메시지에 아이템 시작
-      messages[0] += messages[1]
-      messages.shift
+      messages[0] += messages[1] if messages.length > 1
+      messages.delete_at(1) if messages.length > 1
 
       return messages
     end
