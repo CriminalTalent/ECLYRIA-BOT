@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-# require 'bundler/setup'  ← 이 줄 주석 처리
+
 require 'dotenv'
 require 'time'
 require 'json'
