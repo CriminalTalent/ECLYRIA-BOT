@@ -1,5 +1,5 @@
 # ============================================
-# commands/bet_command.rb (멘션 감지 강화 + 심플 출력)
+# commands/bet_command.rb (출력 형식 수정)
 # ============================================
 class BetCommand
   MAX_BETS_PER_DAY = 3
@@ -35,13 +35,12 @@ class BetCommand
       return "@#{@student_id} 갈레온이 부족해요."
     end
 
-    # 베팅 횟수 확인 (오늘 날짜 기준)
+    # 베팅 횟수 확인
     today = Time.now.strftime('%Y-%m-%d')
     last_bet_date = player[:last_bet_date].to_s.strip
     
     puts "[BET] 오늘: #{today}, 마지막 베팅 날짜: #{last_bet_date}"
 
-    # 날짜가 같으면 카운트 이어감, 다르면 0으로 리셋
     if last_bet_date == today
       bet_count = player[:bet_count].to_i
     else
@@ -57,11 +56,11 @@ class BetCommand
 
     # 배당률 랜덤 (-5x ~ +5x)
     multiplier = rand(-5..5)
-    result = @amount * multiplier
-    new_galleons = current_galleons + result
+    profit_loss = @amount * multiplier  # 손익
+    new_galleons = current_galleons + profit_loss
     new_bet_count = bet_count + 1
 
-    puts "[BET] 배수: #{multiplier}, 결과: #{result}, 새 갈레온: #{new_galleons}, 새 카운트: #{new_bet_count}"
+    puts "[BET] 배수: #{multiplier}, 손익: #{profit_loss}, 새 갈레온: #{new_galleons}, 새 카운트: #{new_bet_count}"
 
     # 업데이트
     @sheet_manager.update_user(@student_id, {
@@ -70,17 +69,11 @@ class BetCommand
       bet_count: new_bet_count
     })
 
-    # 결과 메시지 (심플하게)
-    if result > 0
-      # 성공
-      message = "@#{@student_id} 5G 베팅 결과!\n배수: #{multiplier > 0 ? '+' : ''}#{multiplier}\n현재 잔액: #{new_galleons} G\n(오늘 사용: #{new_bet_count}/#{MAX_BETS_PER_DAY})"
-    elsif result < 0
-      # 실패
-      message = "@#{@student_id} 5G 베팅 결과!\n배수: #{multiplier}\n현재 잔액: #{new_galleons} G\n(오늘 사용: #{new_bet_count}/#{MAX_BETS_PER_DAY})"
-    else
-      # 무승부
-      message = "@#{@student_id} 5G 베팅 결과!\n배수: 0\n현재 잔액: #{new_galleons} G\n(오늘 사용: #{new_bet_count}/#{MAX_BETS_PER_DAY})"
-    end
+    # 결과 메시지
+    message = "@#{@student_id} #{@amount}G 베팅 결과!\n"
+    message += "배수: #{multiplier > 0 ? '+' : ''}#{multiplier}, 손익: #{profit_loss > 0 ? '+' : ''}#{profit_loss} G\n"
+    message += "현재 잔액: #{new_galleons} G\n"
+    message += "(오늘 사용: #{new_bet_count}/#{MAX_BETS_PER_DAY})"
 
     puts "[BET] SUCCESS: #{message}"
     return message
