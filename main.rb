@@ -4,14 +4,11 @@
 require 'dotenv'
 require 'time'
 require 'json'
-require 'ostruct'
-require 'nokogiri'
 require 'set'
 require 'google/apis/sheets_v4'
 require 'googleauth'
 
 require_relative 'mastodon_client'
-require_relative 'streaming_client'
 require_relative 'sheet_manager'
 require_relative 'command_parser'
 
@@ -30,7 +27,7 @@ TOKEN           = ENV['ACCESS_TOKEN']
 SHEET_ID        = ENV['SHEET_ID']
 CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
 
-puts "[상점봇 Streaming] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
+puts "[상점봇 Polling] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
 # -----------------------------
 # Google Sheets 연결
@@ -54,57 +51,55 @@ rescue => e
 end
 
 # -----------------------------
-# Mastodon 클라이언트 (REST + Streaming)
+# Mastodon 클라이언트
 # -----------------------------
-rest_client      = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
-streaming_client = MastodonStreamingClient.new(base_url: BASE_URL, token: TOKEN)
+mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
 
 puts "----------------------------------------"
-puts "상점봇 준비 완료. Streaming으로 멘션 감시 시작"
+puts "상점봇 준비 완료. Polling으로 멘션 감시 시작"
 puts "----------------------------------------"
 
-loop_count = 0
+# -----------------------------
+# Main polling loop (개선 버전)
+# -----------------------------
+processed_ids = Set.new
+last_check_time = Time.now
 
-begin
-  loop do
-    loop_count += 1
-    puts "[STREAM 루프 #{loop_count}] notification 스트림 연결..."
-
-    streaming_client.stream_notifications do |notif|
-      next unless notif["type"] == "mention"
-      next unless notif["status"]
-
-      status  = notif["status"]
-      account = notif["account"]
-
-      created_at = Time.parse(status["created_at"].to_s).getlocal.strftime('%H:%M:%S')
-      sender     = account["acct"]
-      content    = status["content"].to_s.encode('UTF-8')
-
-      puts "[MENTION] #{created_at} - @#{sender}"
-      puts "  ↳ #{content}"
-
-      begin
-        n = {
-          "id"      => notif["id"].to_s,
-          "type"    => notif["type"],
-          "status"  => status,
-          "account" => account
-        }
-
-        CommandParser.parse(rest_client, sheet_manager, n)
-      rescue => e
-        puts "[에러] 명령어 실행 중 문제 발생: #{e.class} - #{e.message}"
-        puts e.backtrace.first(5)
+loop do
+  begin
+    notifications, rate = mastodon.notifications
+    
+    notifications.each do |note|
+      next unless note["type"] == "mention"
+      
+      nid = note["id"].to_s
+      
+      # 이미 처리한 알림은 스킵
+      next if processed_ids.include?(nid)
+      
+      # 처리 목록에 추가
+      processed_ids.add(nid)
+      
+      # 메모리 관리: 1000개 넘으면 오래된 것 삭제
+      if processed_ids.size > 1000
+        processed_ids = processed_ids.to_a.last(500).to_set
       end
+      
+      account = note["account"]["acct"]
+      content_raw = note.dig("status", "content") || ""
+      text = content_raw.gsub(/<[^>]+>/, "").strip
+      
+      puts "[MENTION] @#{account}: #{text[0..50]}..."
+      
+      # CommandParser가 내부적으로 응답 처리
+      CommandParser.parse(mastodon, sheet_manager, note)
     end
-
-    puts "[STREAM] 연결 종료됨. 10초 후 재연결"
-    sleep 10
+    
+  rescue => e
+    puts "[오류] #{e.class} - #{e.message}"
+    puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+    sleep 3
   end
-rescue Interrupt
-  puts "\n[종료] Ctrl+C 로 상점봇 Streaming 종료"
-rescue => e
-  puts "[치명적 오류] #{e.class} - #{e.message}"
-  puts e.backtrace.first(10)
+  
+  sleep 3
 end
