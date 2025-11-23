@@ -1,7 +1,6 @@
-# ============================================
-# main.rb (Shop Bot - Streaming 버전)
-# ============================================
-require 'bundler/setup'
+#!/usr/bin/env ruby
+# encoding: UTF-8
+# require 'bundler/setup'  ← 이 줄 주석 처리
 require 'dotenv'
 require 'time'
 require 'json'
@@ -72,7 +71,6 @@ begin
     puts "[STREAM 루프 #{loop_count}] notification 스트림 연결..."
 
     streaming_client.stream_notifications do |notif|
-      # notif는 Mastodon Notification JSON
       next unless notif["type"] == "mention"
       next unless notif["status"]
 
@@ -87,7 +85,6 @@ begin
       puts "  ↳ #{content}"
 
       begin
-        # CommandParser에 전달할 notification 구조
         n = {
           "id"      => notif["id"].to_s,
           "type"    => notif["type"],
@@ -102,7 +99,6 @@ begin
       end
     end
 
-    # 여기까지 왔다는 건 스트리밍이 끊긴 것
     puts "[STREAM] 연결 종료됨. 10초 후 재연결"
     sleep 10
   end
