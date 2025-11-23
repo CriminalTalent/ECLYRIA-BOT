@@ -149,8 +149,6 @@ module CommandParser
 
     begin
       mastodon_client.post_status(text, reply_to_id: status_id, visibility: visibility)
-      # 여기서는 굳이 "성공" 로그 안 찍어도 됨
-      # (성공/실패 로그는 mastodon_client.post_status 내부에서 처리)
     rescue => e
       puts "[REPLY-ERROR] @#{acct} 답글 중 에러: #{e.class} - #{e.message}"
     end
@@ -175,13 +173,11 @@ module CommandParser
           return
         end
       
-      # ✅ 1) 갈레온 양도: 두 번째 토큰이 '갈레온'인 경우
+      # ✅ 1) 갈레온 양도: [양도/갈레온/숫자/@타겟]
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
         amount = Regexp.last_match(1).to_i
         target_acct = Regexp.last_match(2).strip.split('@').first
       
-        # transfer_galleons_command.rb 에 맞게 커맨드 객체로 위임
-        # (new(보내는 사람, 받는 사람, 금액, sheet_manager) 라고 가정)
         message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
       
       # ✅ 2) 일반 아이템 양도: [양도/아이템명/@타겟]
