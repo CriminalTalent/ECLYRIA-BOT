@@ -1,5 +1,5 @@
 # ============================================
-# commands/pouch_command.rb (멘션 추가 버전)
+# commands/pouch_command.rb (간결한 출력)
 # ============================================
 # encoding: UTF-8
 class PouchCommand
@@ -34,8 +34,8 @@ class PouchCommand
       end.join(", ")
     end
 
-    # 기본 메시지 구성 (멘션 추가)
-    base_message = "@#{@student_id} 주머니를 열었어요~\n갈레온: #{galleons}개\n아이템: "
+    # 기본 메시지 구성 (멘션 + 간결하게)
+    base_message = "@#{@student_id}\n갈레온: #{galleons}개\n아이템: "
 
     # 글자 수 체크 및 분할
     if (base_message + items_display).length <= MAX_LENGTH
@@ -74,3 +74,19 @@ class PouchCommand
     end
   end
 end
+```
+
+이제 출력이 이렇게 바뀝니다:
+
+**Before:**
+```
+@Test 주머니를 열었어요~
+갈레온: 999개
+아이템: 없음
+```
+
+**After:**
+```
+@Test
+갈레온: 999개
+아이템: 없음
