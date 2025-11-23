@@ -163,65 +163,74 @@ module CommandParser
       display       = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
       content       = clean_html(content_raw)
 
+      puts "[PARSER] 원본: #{content_raw[0..100]}"
+      puts "[PARSER] 정제: #{content}"
+
       message = nil
 
       case content
-      when /\[구매\/(.+?)\]/    # BuyCommand 호출
+      when /\[구매\/(.+?)\]/
+        item_name = $1.strip
+        puts "[PARSER] 구매 명령 감지: #{item_name}"
         message = BuyCommand.new(content, sender, sheet_manager).execute
         if message == :player_not_found
-          puts "[BUY] ERROR: player not found (@#{sender}) → 마스토돈 답글 생략"
+          puts "[BUY] ERROR: player not found (@#{sender})"
           return
         end
       
-      # ✅ 1) 갈레온 양도: [양도/갈레온/숫자/@타겟]
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
         amount = Regexp.last_match(1).to_i
         target_acct = Regexp.last_match(2).strip.split('@').first
-      
+        puts "[PARSER] 갈레온 양도: #{amount}G → @#{target_acct}"
         message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
       
-      # ✅ 2) 일반 아이템 양도: [양도/아이템명/@타겟]
       when /\[양도\/(.+?)\/@(.+?)\]/
         item_name   = $1.strip
         target_acct = $2.strip.split('@').first
+        puts "[PARSER] 아이템 양도: #{item_name} → @#{target_acct}"
         message = TransferItemCommand.new(sender, target_acct, item_name, sheet_manager).execute
       
       when /\[사용\/(.+?)\]/
-        message = UseItemCommand.new(sender, $1.strip, sheet_manager).execute
+        item_name = $1.strip
+        puts "[PARSER] 사용 명령 감지: #{item_name}"
+        message = UseItemCommand.new(sender, item_name, sheet_manager).execute
       
       when /\[주머니\]/
+        puts "[PARSER] 주머니 명령 감지"
         message = PouchCommand.new(sender, sheet_manager).execute
       
       when /\[타로\]/
+        puts "[PARSER] 타로 명령 감지"
         message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
       
       when /\[베팅\/(\d+)\]/
-        amount  = Regexp.last_match(1).to_i
+        amount = Regexp.last_match(1).to_i
+        puts "[PARSER] 베팅 명령 감지: #{amount}G"
         message = BetCommand.new(sender, amount, sheet_manager).execute
 
       when /\[주사위|d\d+|\d+d\]/i
+        puts "[PARSER] 주사위 명령 감지"
         DiceCommand.run(mastodon_client, notification)
         return
       
-      when /\[yes|no|yesno|ㅇㅇ|ㄴㄴ\]/i
-        YnCommand.run(mastodon_client, notification)
-        return
-      
       when /\[동전|coin\]/i
+        puts "[PARSER] 동전 명령 감지"
         CoinCommand.run(mastodon_client, notification)
         return
       
       when /\[YN\]/i
+        puts "[PARSER] YN 명령 감지"
         YnCommand.run(mastodon_client, notification)
         return
 
       else
-        # 명령어가 없으면 무시 (대사만 있는 경우)
+        puts "[PARSER] 명령 없음"
         return
       end
 
-      # 공통 답글 처리 (쿨타임 + 공백 체크)
+      # 공통 답글 처리
       if message && message != :player_not_found
+        puts "[PARSER] 답글 전송: #{message[0..50]}..."
         safe_reply(mastodon_client, notification, sender, message)
       end
 
