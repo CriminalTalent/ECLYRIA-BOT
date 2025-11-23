@@ -8,7 +8,6 @@ class DiceCommand
   end
 
   # 메인 진입점: CommandParser에서 호출
-  # DiceCommand.run(mastodon_client, notification)
   def self.run(mastodon_client, notification)
     begin
       content_raw  = notification.dig("status", "content") || ""
@@ -17,25 +16,26 @@ class DiceCommand
       content      = clean_html(content_raw)
 
       # ----- 명령 파싱 -----
-      # [주사위]    → 1d6
-      # [d6], [d20] → 1d6, 1d20
-      # [6d], [6D]  → 1d6 (d 앞/뒤 위치 뒤집힌 버전 허용)
       dice_count = 1
       dice_sides = 6
 
       case content
+      when /\[(\d+)D\]/i
+        # [100D] 형식
+        dice_sides = $1.to_i
+        dice_count = 1
       when /\[주사위\]/i
         dice_count = 1
         dice_sides = 6
-      when /\[(?:d(\d+)|(\d+)[dD])\]/i
-        # d6 / d20 → $1
-        # 6d / 6D  → $2
-        faces = ($1 || $2).to_i
+      when /\[d(\d+)\]/i
+        dice_sides = $1.to_i
         dice_count = 1
-        dice_sides = faces
+      when /\[(\d+)d\]/i
+        dice_sides = $1.to_i
+        dice_count = 1
       else
         # 여기에 들어오면 잘못된 형식
-        text = "@#{sender_acct} 주사위 형식을 이해하지 못했어요. 예: [주사위], [d6], [6D]"
+        text = "@#{sender_acct} 주사위 형식을 이해하지 못했어요. 예: [주사위], [6D], [100D]"
         reply_to_notification(mastodon_client, notification, text)
         return
       end
@@ -48,18 +48,10 @@ class DiceCommand
       end
 
       # ----- 주사위 굴리기 -----
-      rolls = Array.new(dice_count) { rand(1..dice_sides) }
-      total = rolls.sum
+      result = rand(1..dice_sides)
 
-      # ----- 결과 문구 구성 (RP 톤 살짝) -----
-      if dice_count == 1
-        text = "@#{sender_acct} #{dice_sides}면 주사위를 굴려봤어요.\n" \
-               "결과는… #{rolls.first}가 나왔네요."
-      else
-        text = "@#{sender_acct} #{dice_count}D#{dice_sides}를 굴려봤어요.\n" \
-               "각각의 눈: #{rolls.join(', ')}\n" \
-               "합계는 #{total} 입니다."
-      end
+      # ----- 결과: 숫자만 출력 -----
+      text = "@#{sender_acct} #{result}"
 
       reply_to_notification(mastodon_client, notification, text)
 
