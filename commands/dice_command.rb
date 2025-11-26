@@ -50,7 +50,7 @@ class DiceCommand
       # ----- 주사위 굴리기 -----
       result = rand(1..dice_sides)
 
-      # ----- 결과: 숫자만 출력 -----
+      # ----- 결과: 멘션 + 숫자만 출력 -----
       text = "@#{sender_acct} #{result}"
 
       reply_to_notification(mastodon_client, notification, text)
