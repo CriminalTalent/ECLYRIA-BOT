@@ -81,6 +81,30 @@ class MastodonClient
   end
 
   # ---------------------------
+  # 알림(멘션) 가져오기
+  # ---------------------------
+  def notifications(limit: 40)
+    res, body = request(
+      method: :get,
+      path: "/api/v1/notifications",
+      params: { limit: limit }
+    )
+    
+    notifications = body.is_a?(Array) ? body : []
+    
+    rate_info = nil
+    if res
+      rate_info = {
+        limit: res['x-ratelimit-limit'],
+        remaining: res['x-ratelimit-remaining'],
+        reset: res['x-ratelimit-reset']
+      }
+    end
+    
+    [notifications, rate_info]
+  end
+
+  # ---------------------------
   # 글쓰기 / 답글
   # ---------------------------
   def post_status(text, reply_to_id: nil, visibility: "public")
