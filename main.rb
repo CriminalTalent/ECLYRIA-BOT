@@ -1,126 +1,97 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-require 'dotenv'
-require 'time'
-require 'json'
-require 'set'
-require 'google/apis/sheets_v4'
-require 'googleauth'
 
+require 'mastodon'
+require 'dotenv/load'
 require_relative 'mastodon_client'
-require_relative 'sheet_manager'
-require_relative 'command_parser'
 
-Dotenv.load('.env')
+LAST_FILE = 'last_mention_id.txt'
 
-required_envs = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
-missing = required_envs.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
+base_url = ENV["MASTODON_BASE_URL"]
+token    = ENV["MASTODON_TOKEN"]
 
-if missing.any?
-  missing.each { |v| puts "[환경변수 누락] #{v}" }
-  exit 1
-end
+client = MastodonClient.new(base_url: base_url, token: token)
 
-BASE_URL        = ENV['MASTODON_BASE_URL']
-TOKEN           = ENV['MASTODON_TOKEN']
-SHEET_ID        = ENV['GOOGLE_SHEET_ID']
-CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
-LAST_ID_FILE    = 'last_mention_id.txt'
-
-puts "[상점봇 Polling] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
-
-# -----------------------------
-# Google Sheets 연결
-# -----------------------------
-begin
-  scopes = ['https://www.googleapis.com/auth/spreadsheets']
-  creds = Google::Auth::ServiceAccountCredentials.make_creds(
-    json_key_io: File.open(CREDENTIAL_PATH),
-    scope: scopes
-  )
-  creds.fetch_access_token!
-
-  sheet_service = Google::Apis::SheetsV4::SheetsService.new
-  sheet_service.authorization = creds
-
-  sheet_manager = SheetManager.new(sheet_service, SHEET_ID)
-  puts "[Google Sheets] 연결 성공: #{SHEET_ID}"
-rescue => e
-  puts "[Google Sheets 오류] #{e.message}"
-  exit 1
-end
-
-# -----------------------------
-# Mastodon 클라이언트
-# -----------------------------
-mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
-
-# 마지막 처리한 멘션 ID 불러오기
-last_processed_id = nil
-if File.exist?(LAST_ID_FILE)
-  last_processed_id = File.read(LAST_ID_FILE).strip
-  puts "[RESUME] 마지막 처리 ID: #{last_processed_id}"
-end
+# last_id 읽기
+last_id =
+  if File.exist?(LAST_FILE)
+    File.read(LAST_FILE).to_i
+  else
+    0
+  end
 
 puts "----------------------------------------"
-puts "상점봇 준비 완료. Polling으로 멘션 감시 시작"
+puts "상점봇 Polling 시작 (최종 처리 ID: #{last_id})"
 puts "----------------------------------------"
 
-# -----------------------------
-# Main polling loop (개선 버전)
-# -----------------------------
-processed_ids = Set.new
+def clean_html(text)
+  text
+    .gsub(/<[^>]+>/, "")
+    .gsub(/&[a-z]+;/i, "")
+    .strip
+end
+
+def extract_command(content)
+  c = clean_html(content)
+
+  return :wallet if c =~ /\[(주머니|지갑|가방|wallet)\]/i
+  return :luck   if c =~ /\[(운세|fortune)\]/i
+  return :dice   if c =~ /\[(주사위|dice)\]/i
+  return :random if c =~ /\[(랜덤박스|랜덤상자|random)\]/i
+
+  nil
+end
+
+# 응답 공통
+def reply(mastodon_client, notification, text)
+  return if text.to_s.strip.empty?
+  status_id = notification["status"]["id"]
+  mastodon_client.post_status(text, reply_to_id: status_id, visibility: "unlisted")
+end
+
+# 기능 예시: 지갑 확인
+def reply_wallet(mastodon_client, notification)
+  acct = notification["account"]["acct"]
+  text = "@#{acct} 갈레온 확인 기능!"
+  reply(mastodon_client, notification, text)
+  puts "[REPLY] wallet -> #{acct}"
+end
 
 loop do
   begin
-    notifications, rate = mastodon.notifications
-    
-    # 최신 멘션 ID 저장용
-    newest_id = nil
-    
-    notifications.each do |note|
-      next unless note["type"] == "mention"
-      
-      nid = note["id"].to_s
-      
-      # 이미 처리한 ID면 스킵 (파일에서 읽은 ID보다 작거나 같으면 스킵)
-      if last_processed_id && nid.to_i <= last_processed_id.to_i
-        next
+    notifications = client.notifications(types: ["mention"])
+    notifications.reverse_each do |n|
+      nid = n["id"].to_i
+      next unless nid > last_id
+
+      acct = n["account"]["acct"]
+      content = clean_html(n.dig("status", "content") || "")
+
+      cmd = extract_command(content)
+
+      # 🔹 처리 전 last_id 즉시 갱신
+      last_id = nid
+      File.write(LAST_FILE, last_id.to_s)
+
+      if cmd == :wallet
+        reply_wallet(client, n)
+      elsif cmd == :luck
+        reply(client, n, "@#{acct} 오늘의 운세 기능!")
+      elsif cmd == :dice
+        roll = rand(1..20)
+        reply(client, n, "@#{acct} 🎲 주사위 결과: #{roll}")
+      elsif cmd == :random
+        reply(client, n, "@#{acct} 랜덤박스 기능!")
+      else
+        puts "[SKIP] 명령 아님: #{content}"
       end
-      
-      # 이미 처리한 알림은 스킵
-      next if processed_ids.include?(nid)
-      
-      # 처리 목록에 추가
-      processed_ids.add(nid)
-      newest_id = nid if newest_id.nil? || nid.to_i > newest_id.to_i
-      
-      # 메모리 관리: 1000개 넘으면 오래된 것 삭제
-      if processed_ids.size > 1000
-        processed_ids = processed_ids.to_a.last(500).to_set
-      end
-      
-      account = note["account"]["acct"]
-      content_raw = note.dig("status", "content") || ""
-      text = content_raw.gsub(/<[^>]+>/, "").strip
-      
-      puts "[MENTION] @#{account}: #{text[0..50]}..."
-      
-      # CommandParser가 내부적으로 응답 처리
-      CommandParser.parse(mastodon, sheet_manager, note)
+
+      sleep 2
     end
-    
-    # 새로운 멘션을 처리했다면 파일에 저장
-    if newest_id
-      File.write(LAST_ID_FILE, newest_id)
-      last_processed_id = newest_id
-    end
-    
+
   rescue => e
-    puts "[오류] #{e.class} - #{e.message}"
-    puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
-    sleep 3
+    puts "[ERROR] #{e.class} - #{e.message}"
   end
-  
-  sleep 3
+
+  sleep 7
 end
