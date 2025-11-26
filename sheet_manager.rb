@@ -1,4 +1,4 @@
-# sheet_manager.rb (상점봇 전용 - 구매 오류 수정 버전)
+# sheet_manager.rb (상점봇 전용 - 열 매핑 수정 버전)
 require 'google/apis/sheets_v4'
 
 class SheetManager
@@ -138,7 +138,7 @@ class SheetManager
 
   # 아이템 찾기
   def find_item(item_name)
-    rows = read(ITEMS_SHEET, 'A:I')
+    rows = read(ITEMS_SHEET, 'A:E')
     
     if rows.empty?
       puts "[FIND_ITEM] ERROR: '#{ITEMS_SHEET}' 시트가 비어있음"
@@ -182,14 +182,27 @@ class SheetManager
     }
   end
 
-  # 아이템 행 변환
+  # 아이템 행 변환 (수정됨)
   def convert_item_row(header, row)
+    # A열: 아이템명
+    # B열: 설명 (긴 텍스트)
+    # C열: 가격
+    # D열: 판매여부 (체크박스)
+    # E열: 사용 및 양도가능 (체크박스)
+    
     price_value = row[2].to_s.strip
     price = price_value.empty? ? 0 : price_value.to_i
-    description = (row[3] || "").to_s.strip
-    sellable = price > 0
-    usable_value = (row[5] || "").to_s.strip.upcase
-    usable = ['TRUE', '1', 'Y', 'YES', '○'].include?(usable_value)
+    
+    # B열: 설명
+    description = (row[1] || "").to_s.strip
+    
+    # D열: 판매여부
+    sellable_value = row[3]
+    sellable = (sellable_value == true || sellable_value.to_s.strip.upcase == "TRUE")
+    
+    # E열: 사용 및 양도가능
+    usable_value = row[4]
+    usable = (usable_value == true || usable_value.to_s.strip.upcase == "TRUE")
     
     {
       name: row[0].to_s.strip,
