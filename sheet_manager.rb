@@ -1,4 +1,4 @@
-# sheet_manager.rb (상점봇 전용 - 완전 수정 버전)
+# sheet_manager.rb (상점봇 전용 - 구매 오류 수정 버전)
 require 'google/apis/sheets_v4'
 
 class SheetManager
@@ -142,7 +142,7 @@ class SheetManager
     false
   end
 
-  # 아이템 찾기
+  # 아이템 찾기 (수정됨)
   def find_item(item_name)
     rows = read(ITEMS_SHEET, 'A:I')
     
@@ -190,17 +190,38 @@ class SheetManager
     }
   end
 
-  # 아이템 행 변환
+  # 아이템 행 변환 (수정됨 - 스프레드시트 구조에 맞춤)
+  # A: 아이템명, B: 이름, C: 갈레온, D: 아이템, E: 기숙사, F: 사용및양도가능, G: 이미지URL
   def convert_item_row(header, row)
+    # 스프레드시트 구조:
+    # A: 아이템명, B: 이름, C: 갈레온(가격), D: 아이템(설명), E: 기숙사, F: 사용및양도가능, G: 이미지URL
+    
+    # C열이 갈레온(가격)
+    price_value = row[2].to_s.strip
+    price = price_value.empty? ? 0 : price_value.to_i
+    
+    # D열이 아이템(설명)
+    description = (row[3] || "").to_s.strip
+    
+    # 구매 가능 여부는 별도 열이 없으므로 가격이 있으면 구매 가능으로 처리
+    sellable = price > 0
+    
+    # F열이 사용및양도가능
+    usable_value = (row[5] || "").to_s.strip.upcase
+    usable = ['TRUE', '1', 'Y', 'YES', '○'].include?(usable_value)
+    
+    puts "[CONVERT_ITEM] name=#{row[0]}, price=#{price}, desc=#{description[0..50]}, sellable=#{sellable}, usable=#{usable}"
+    
     {
       name: row[0].to_s.strip,
-      price: (row[1] || 0).to_i,
-      description: (row[3] || "").to_s.strip,
-      purchasable: (row[4] || "").to_s.strip.upcase == 'TRUE',
-      transferable: (row[5] || "").to_s.strip.upcase == 'TRUE',
-      usable: (row[6] || "").to_s.strip.upcase == 'TRUE',
-      effect: (row[7] || "").to_s.strip,
-      consumable: (row[8] || "").to_s.strip.upcase == 'TRUE'
+      price: price,
+      description: description,
+      sellable: sellable,      # buy_command.rb에서 사용
+      usable: usable,          # use_item_command.rb에서 사용
+      purchasable: sellable,   # 호환성
+      transferable: true,      # 기본값
+      effect: "",
+      consumable: usable
     }
   end
 
