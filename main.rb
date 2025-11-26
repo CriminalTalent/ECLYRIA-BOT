@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-
 require 'dotenv'
 require 'time'
 require 'json'
@@ -26,6 +25,7 @@ BASE_URL        = ENV['MASTODON_BASE_URL']
 TOKEN           = ENV['ACCESS_TOKEN']
 SHEET_ID        = ENV['SHEET_ID']
 CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
+LAST_ID_FILE    = 'last_mention_id.txt'
 
 puts "[상점봇 Polling] 실행 시작 (#{Time.now.strftime('%H:%M:%S')})"
 
@@ -55,6 +55,13 @@ end
 # -----------------------------
 mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
 
+# 마지막 처리한 멘션 ID 불러오기
+last_processed_id = nil
+if File.exist?(LAST_ID_FILE)
+  last_processed_id = File.read(LAST_ID_FILE).strip
+  puts "[RESUME] 마지막 처리 ID: #{last_processed_id}"
+end
+
 puts "----------------------------------------"
 puts "상점봇 준비 완료. Polling으로 멘션 감시 시작"
 puts "----------------------------------------"
@@ -63,22 +70,30 @@ puts "----------------------------------------"
 # Main polling loop (개선 버전)
 # -----------------------------
 processed_ids = Set.new
-last_check_time = Time.now
 
 loop do
   begin
     notifications, rate = mastodon.notifications
+    
+    # 최신 멘션 ID 저장용
+    newest_id = nil
     
     notifications.each do |note|
       next unless note["type"] == "mention"
       
       nid = note["id"].to_s
       
+      # 이미 처리한 ID면 스킵 (파일에서 읽은 ID보다 작거나 같으면 스킵)
+      if last_processed_id && nid.to_i <= last_processed_id.to_i
+        next
+      end
+      
       # 이미 처리한 알림은 스킵
       next if processed_ids.include?(nid)
       
       # 처리 목록에 추가
       processed_ids.add(nid)
+      newest_id = nid if newest_id.nil? || nid.to_i > newest_id.to_i
       
       # 메모리 관리: 1000개 넘으면 오래된 것 삭제
       if processed_ids.size > 1000
@@ -93,6 +108,12 @@ loop do
       
       # CommandParser가 내부적으로 응답 처리
       CommandParser.parse(mastodon, sheet_manager, note)
+    end
+    
+    # 새로운 멘션을 처리했다면 파일에 저장
+    if newest_id
+      File.write(LAST_ID_FILE, newest_id)
+      last_processed_id = newest_id
     end
     
   rescue => e
