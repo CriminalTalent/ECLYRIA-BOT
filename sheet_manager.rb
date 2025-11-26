@@ -67,14 +67,13 @@ class SheetManager
     )
   end
 
-  # 사용자 찾기 (A:K 범위 - K열까지 포함)
+  # 사용자 찾기
   def find_user(acct)
     clean_acct = acct.to_s.gsub('@', '').strip
     rows = read(USERS_SHEET, 'A:K')
     return nil if rows.empty?
     
     header = rows.first || []
-    puts "[FIND_USER] 헤더: #{header.inspect}"
     puts "[FIND_USER] 검색 ID: #{clean_acct}"
 
     rows[1..].each_with_index do |r, idx|
@@ -104,10 +103,6 @@ class SheetManager
       row_id = row[0].to_s.gsub('@', '').strip
       next unless row_id == clean_acct
 
-      # 열 매핑
-      # A: ID, B: 이름, C: 갈레온, D: 아이템, E: 메모, F: 기숙사
-      # G: 마지막베팅일, H: 베팅횟수, I: 출석날짜, J: 마지막타로일, K: 개별기숙사점수
-      
       updates.each do |key, value|
         col = case key.to_sym
               when :id then 0
@@ -125,7 +120,6 @@ class SheetManager
               end
         
         if col
-          # 배열이 부족하면 확장
           while row.length <= col
             row << ""
           end
@@ -134,7 +128,7 @@ class SheetManager
       end
 
       write(USERS_SHEET, "A#{idx+1}:K#{idx+1}", [row])
-      puts "[UPDATE_USER] 업데이트 완료: #{clean_acct}, #{updates.inspect}"
+      puts "[UPDATE_USER] 업데이트 완료: #{clean_acct}"
       return true
     end
     
@@ -142,17 +136,16 @@ class SheetManager
     false
   end
 
-  # 아이템 찾기 (수정됨)
+  # 아이템 찾기
   def find_item(item_name)
     rows = read(ITEMS_SHEET, 'A:I')
     
     if rows.empty?
-      puts "[FIND_ITEM] ERROR: '#{ITEMS_SHEET}' 시트가 비어있거나 존재하지 않음"
+      puts "[FIND_ITEM] ERROR: '#{ITEMS_SHEET}' 시트가 비어있음"
       return nil
     end
     
     header = rows.first || []
-    puts "[FIND_ITEM] 헤더: #{header.inspect}"
     puts "[FIND_ITEM] 검색 아이템: #{item_name}"
 
     rows[1..].each_with_index do |r, idx|
@@ -163,7 +156,6 @@ class SheetManager
       if row_item_name == item_name.to_s.strip
         puts "[FIND_ITEM] 찾음: #{item_name} (행: #{idx+2})"
         result = convert_item_row(header, r)
-        puts "[FIND_ITEM] 결과: #{result.inspect}"
         return result
       end
     end
@@ -190,36 +182,23 @@ class SheetManager
     }
   end
 
-  # 아이템 행 변환 (수정됨 - 스프레드시트 구조에 맞춤)
-  # A: 아이템명, B: 이름, C: 갈레온, D: 아이템, E: 기숙사, F: 사용및양도가능, G: 이미지URL
+  # 아이템 행 변환
   def convert_item_row(header, row)
-    # 스프레드시트 구조:
-    # A: 아이템명, B: 이름, C: 갈레온(가격), D: 아이템(설명), E: 기숙사, F: 사용및양도가능, G: 이미지URL
-    
-    # C열이 갈레온(가격)
     price_value = row[2].to_s.strip
     price = price_value.empty? ? 0 : price_value.to_i
-    
-    # D열이 아이템(설명)
     description = (row[3] || "").to_s.strip
-    
-    # 구매 가능 여부는 별도 열이 없으므로 가격이 있으면 구매 가능으로 처리
     sellable = price > 0
-    
-    # F열이 사용및양도가능
     usable_value = (row[5] || "").to_s.strip.upcase
     usable = ['TRUE', '1', 'Y', 'YES', '○'].include?(usable_value)
-    
-    puts "[CONVERT_ITEM] name=#{row[0]}, price=#{price}, desc=#{description[0..50]}, sellable=#{sellable}, usable=#{usable}"
     
     {
       name: row[0].to_s.strip,
       price: price,
       description: description,
-      sellable: sellable,      # buy_command.rb에서 사용
-      usable: usable,          # use_item_command.rb에서 사용
-      purchasable: sellable,   # 호환성
-      transferable: true,      # 기본값
+      sellable: sellable,
+      usable: usable,
+      purchasable: sellable,
+      transferable: true,
       effect: "",
       consumable: usable
     }
@@ -241,52 +220,5 @@ class SheetManager
     append(SHOP_LOG_SHEET, row)
   rescue => e
     puts "[로그 오류] #{e.message}"
-  end
-
-  # 호환성 메서드들 (기존 코드 지원)
-  def read_values(range)
-    read(USERS_SHEET, range.split('!').last || 'A:Z')
-  end
-
-  def update_values(range, values)
-    sheet_name = range.include?('!') ? range.split('!').first : USERS_SHEET
-    a1 = range.split('!').last || range
-    write(sheet_name, a1, values)
-  end
-
-  def append_values(range, values)
-    sheet_name = range.include?('!') ? range.split('!').first : USERS_SHEET
-    values.each { |row| append(sheet_name, row) }
-  end
-
-  # get_player 메서드 (기존 코드 호환)
-  def get_player(user_id)
-    find_user(user_id)
-  end
-
-  # update_player 메서드 (기존 코드 호환)
-  def update_player(player)
-    return false unless player && player[:id]
-    
-    updates = {
-      id: player[:id],
-      name: player[:name],
-      galleons: player[:galleons],
-      items: player[:items],
-      memo: player[:memo],
-      house: player[:house],
-      last_bet_date: player[:last_bet_date],
-      bet_count: player[:bet_count],
-      attendance_date: player[:attendance_date],
-      last_tarot_date: player[:last_tarot_date],
-      house_score: player[:house_score]
-    }
-    
-    update_user(player[:id], updates)
-  end
-
-  # get_item 메서드 (기존 코드 호환)
-  def get_item(item_name)
-    find_item(item_name)
   end
 end
