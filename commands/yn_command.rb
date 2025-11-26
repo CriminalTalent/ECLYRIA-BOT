@@ -24,10 +24,10 @@ class YnCommand
         return
       end
 
-      # 랜덤 YES / NO
+      # 랜덤 YES / NO (단답)
       result = ["YES", "NO"].sample
 
-      text = "@#{sender} 질문에 대한 답은… #{result}!"
+      text = "@#{sender} #{result}"
 
       reply_to_notification(mastodon_client, notification, text)
 
