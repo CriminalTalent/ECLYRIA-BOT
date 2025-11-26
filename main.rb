@@ -13,7 +13,7 @@ require_relative 'command_parser'
 
 Dotenv.load('.env')
 
-required_envs = %w[MASTODON_BASE_URL ACCESS_TOKEN SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
+required_envs = %w[MASTODON_BASE_URL MASTODON_TOKEN GOOGLE_SHEET_ID GOOGLE_APPLICATION_CREDENTIALS]
 missing = required_envs.select { |v| ENV[v].nil? || ENV[v].strip.empty? }
 
 if missing.any?
@@ -22,8 +22,8 @@ if missing.any?
 end
 
 BASE_URL        = ENV['MASTODON_BASE_URL']
-TOKEN           = ENV['ACCESS_TOKEN']
-SHEET_ID        = ENV['SHEET_ID']
+TOKEN           = ENV['MASTODON_TOKEN']
+SHEET_ID        = ENV['GOOGLE_SHEET_ID']
 CREDENTIAL_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS']
 LAST_ID_FILE    = 'last_mention_id.txt'
 
