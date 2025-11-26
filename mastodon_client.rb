@@ -81,16 +81,19 @@ class MastodonClient
   end
 
   # ---------------------------
-  # 알림(멘션) 가져오기
+  # 알림(멘션) 가져오기 (수정됨 - types 제거)
   # ---------------------------
   def notifications(limit: 40)
+    # types 파라미터 제거 - 모든 알림 가져오기
     res, body = request(
       method: :get,
       path: "/api/v1/notifications",
       params: { limit: limit }
     )
     
+    # 멘션만 필터링 (클라이언트 측에서)
     notifications = body.is_a?(Array) ? body : []
+    mention_notifications = notifications.select { |n| n["type"] == "mention" }
     
     rate_info = nil
     if res
@@ -101,7 +104,8 @@ class MastodonClient
       }
     end
     
-    [notifications, rate_info]
+    # 멘션만 반환
+    mention_notifications
   end
 
   # ---------------------------
