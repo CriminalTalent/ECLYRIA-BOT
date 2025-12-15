@@ -1,5 +1,7 @@
 # encoding: UTF-8
 require 'time'
+require 'cgi'
+
 require_relative 'commands/buy_command'
 require_relative 'commands/transfer_item_command'
 require_relative 'commands/transfer_galleons_command'
@@ -27,10 +29,49 @@ require_relative 'commands/random_gift_command'
 # ============================================
 
 module CommandParser
+  # ------------------------------
+  # 쿨타임 저장소 (유저+명령어 단위)
+  # ------------------------------
   @@last_reply_at = {}
+  @@cooldown_mutex = Mutex.new
 
-  COOLDOWN_SECONDS = 30  # 같은 유저에게 30초 안에 한 번만 답글
+  # ------------------------------
+  # 명령어별 쿨타임(초)
+  # - 유저가 연속으로 여러 명령을 쓰는 걸 막지 않도록 분리
+  # - "봇이 씹힌다" 체감 방지
+  # ------------------------------
+  COOLDOWN_BY_CMD = {
+    buy: 10,
+    transfer_galleons: 10,
+    transfer_item: 10,
+    use_item: 5,
+    pouch: 5,
+    tarot: 30,
+    bet: 10,
 
+    gladrags: 10,
+    puddifoot: 10,
+    honeydukes: 10,
+    zonko: 10,
+    scrivenshaft: 10,
+    shrieking_shack: 10,
+
+    pickup: 5,
+    snowman: 10,
+    butterbeer: 10,
+    random_gift: 10,
+
+    # 아래 3개는 run() 내부에서 자체 reply를 한다면
+    # 이 쿨타임은 직접 적용하지 않고(=safe_reply를 안 타니까)
+    # 참고용으로만 둡니다.
+    dice: 0,
+    coin: 0,
+    yn: 0
+  }.freeze
+
+  # -----------------------------------
+  # TAROT 78장 데이터
+  # -----------------------------------
   TAROT_DATA = {
     # --- Major Arcana (22) ---
     "THE FOOL" => "순수한 마음으로 새로운 모험을 시작할 때라네. 망설이지 말고 발을 내딛게, 학생.",
@@ -119,42 +160,56 @@ module CommandParser
     "KNIGHT OF PENTACLES" => "성실하고 꾸준한 인물이네. 느리지만 끝까지 간다네.",
     "QUEEN OF PENTACLES" => "현실적이면서 따뜻한 사람이라네. 돌봄 속에서 풍요가 자라지.",
     "KING OF PENTACLES" => "성공과 책임의 상징이라네. 자네의 노력이 결실을 맺을 때라네."
-  }
-
-  MAX_BETS_PER_DAY = 3
+  }.freeze
 
   # -----------------------------------
-  # 유저별 30초 쿨타임 reply 헬퍼
+  # (내부) 쿨타임 체크/기록
+  # - acct + cmd_key 기준
   # -----------------------------------
-  def self.safe_reply(mastodon_client, notification, acct, text, visibility: "unlisted")
+  def self.cooldown_seconds_for(cmd_key)
+    COOLDOWN_BY_CMD[cmd_key] || 10
+  end
+
+  def self.cooldown_key(acct, cmd_key)
+    "#{acct}::#{cmd_key}"
+  end
+
+  def self.cooldown_blocked?(acct, cmd_key)
+    cd = cooldown_seconds_for(cmd_key)
+    return false if cd.to_i <= 0
+
+    now = Time.now
+    key = cooldown_key(acct, cmd_key)
+
+    @@cooldown_mutex.synchronize do
+      last = @@last_reply_at[key]
+      if last && (now - last) < cd
+        diff = (now - last).round(1)
+        puts "[REPLY-SKIP] @#{acct} cmd=#{cmd_key} #{diff}s 이내 재요청 → 스킵(쿨타임 #{cd}s)"
+        true
+      else
+        @@last_reply_at[key] = now
+        false
+      end
+    end
+  end
+
+  # -----------------------------------
+  # 유저별 답글 헬퍼 (reply_to 대상 안정화)
+  # -----------------------------------
+  def self.safe_reply(mastodon_client, notification, acct, text, cmd_key: :default, visibility: "unlisted")
     return if text.nil? || text.to_s.strip.empty?
 
-    now  = Time.now
-    last = @@last_reply_at[acct]
-
-    if last && (now - last) < COOLDOWN_SECONDS
-      diff = (now - last).round(1)
-      puts "[REPLY-SKIP] @#{acct} #{diff}s 이내에 이미 답글 전송됨 → 이번에는 스킵"
+    # 반드시 status.id에만 답글 (알림 id에 reply하는 실수 방지)
+    status_id = notification.is_a?(Hash) ? notification.dig("status", "id") : nil
+    unless status_id
+      puts "[REPLY-SKIP] @#{acct} status_id를 찾지 못함(알림 구조 확인 필요) → 답글 스킵"
       return
     end
 
-    @@last_reply_at[acct] = now
-
-    # 여기서 '무엇에 답글을 달지'를 정확히 구한다
-    status_id = nil
-
-    if notification.is_a?(Hash)
-      # 알림(Hash) 구조: { "id" => notif_id, "status" => { "id" => status_id, ... } }
-      status_id = notification.dig("status", "id") || notification["id"]
-    elsif notification.respond_to?(:status) && notification.status.respond_to?(:id)
-      # OpenStruct 형태 등: notif.status.id
-      status_id = notification.status.id
-    elsif notification.respond_to?(:id)
-      # 그냥 status 객체가 넘어온 경우
-      status_id = notification.id
-    else
-      # 최후의 수단: 문자열로
-      status_id = notification.to_s
+    # 명령어별 쿨타임 적용
+    if cooldown_blocked?(acct, cmd_key)
+      return
     end
 
     begin
@@ -164,112 +219,134 @@ module CommandParser
     end
   end
 
-
+  # -----------------------------------
+  # 메인 파서
+  # -----------------------------------
   def self.parse(mastodon_client, sheet_manager, notification)
     begin
-      content_raw   = notification.dig("status", "content") || ""
-      account_info  = notification["account"] || {}
-      sender        = account_info["acct"] || ""
-      display       = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
-      content       = clean_html(content_raw)
+      content_raw  = notification.dig("status", "content") || ""
+      account_info = notification["account"] || {}
+      sender       = account_info["acct"] || ""
+      display      = account_info["display_name"].to_s.strip.empty? ? sender : account_info["display_name"].to_s.strip
+      content      = clean_html(content_raw)
 
+      puts "[PARSER] from=@#{sender}(#{display})"
       puts "[PARSER] 원본: #{content_raw[0..100]}"
       puts "[PARSER] 정제: #{content}"
 
       message = nil
+      cmd_key = nil
 
       case content
       when /\[구매\/(.+?)\]/
-        item_name = $1.strip
+        item_name = Regexp.last_match(1).to_s.strip
         puts "[PARSER] 구매 명령 감지: #{item_name}"
+        cmd_key = :buy
         message = BuyCommand.new(content, sender, sheet_manager).execute
         if message == :player_not_found
           puts "[BUY] ERROR: player not found (@#{sender})"
           return
         end
-      
+
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
         amount = Regexp.last_match(1).to_i
-        target_acct = Regexp.last_match(2).strip.split('@').first
+        target_acct = Regexp.last_match(2).to_s.strip.split('@').first
         puts "[PARSER] 갈레온 양도: #{amount}G → @#{target_acct}"
+        cmd_key = :transfer_galleons
         message = TransferGalleonsCommand.new(sender, target_acct, amount, sheet_manager).execute
-      
+
       when /\[양도\/(.+?)\/@(.+?)\]/
-        item_name   = $1.strip
-        target_acct = $2.strip.split('@').first
+        item_name   = Regexp.last_match(1).to_s.strip
+        target_acct = Regexp.last_match(2).to_s.strip.split('@').first
         puts "[PARSER] 아이템 양도: #{item_name} → @#{target_acct}"
+        cmd_key = :transfer_item
         message = TransferItemCommand.new(sender, target_acct, item_name, sheet_manager).execute
-      
+
       when /\[사용\/(.+?)\]/
-        item_name = $1.strip
+        item_name = Regexp.last_match(1).to_s.strip
         puts "[PARSER] 사용 명령 감지: #{item_name}"
+        cmd_key = :use_item
         message = UseItemCommand.new(sender, item_name, sheet_manager).execute
-      
+
       when /\[주머니\]/
         puts "[PARSER] 주머니 명령 감지"
+        cmd_key = :pouch
         message = PouchCommand.new(sender, sheet_manager).execute
-      
+
       when /\[타로\]/
         puts "[PARSER] 타로 명령 감지"
+        cmd_key = :tarot
         message = TarotCommand.new(sender, TAROT_DATA, sheet_manager).execute
-      
+
       when /\[베팅\/(\d+)\]/
         amount = Regexp.last_match(1).to_i
         puts "[PARSER] 베팅 명령 감지: #{amount}G"
+        cmd_key = :bet
         message = BetCommand.new(sender, amount, sheet_manager).execute
 
       # ===== 호그스미드 이벤트 명령어 =====
       when /\[글래드래그스|옷가게\]/
         puts "[PARSER] 글래드래그스 명령 감지"
+        cmd_key = :gladrags
         message = GladragsCommand.new(sender, sheet_manager).execute
 
       when /\[푸디풋|찻집\]/
         puts "[PARSER] 푸디풋 명령 감지"
+        cmd_key = :puddifoot
         message = PuddifootCommand.new(sender, sheet_manager).execute
 
       when /\[허니듀크스|사탕가게\]/
         puts "[PARSER] 허니듀크스 명령 감지"
+        cmd_key = :honeydukes
         message = HoneyDukesCommand.new(sender, sheet_manager).execute
 
       when /\[종코|장난감\]/
         puts "[PARSER] 종코 명령 감지"
+        cmd_key = :zonko
         message = ZonkoCommand.new(sender, sheet_manager).execute
 
       when /\[스크리븐샤프트|깃펜\]/
         puts "[PARSER] 스크리븐샤프트 명령 감지"
+        cmd_key = :scrivenshaft
         message = ScrivenshaftCommand.new(sender, sheet_manager).execute
 
       when /\[악쓰는오두막|오두막\]/
         puts "[PARSER] 악쓰는 오두막 명령 감지"
+        cmd_key = :shrieking_shack
         message = ShriekingShackCommand.new(sender, sheet_manager).execute
 
       when /\[줍기\]/
         puts "[PARSER] 줍기 명령 감지"
+        cmd_key = :pickup
         message = PickupCommand.new(sender, sheet_manager).execute
 
       when /\[눈사람\]/
         puts "[PARSER] 눈사람 명령 감지"
+        cmd_key = :snowman
         message = SnowmanCommand.new(sender, sheet_manager).execute
 
       when /\[버터맥주\]/
         puts "[PARSER] 버터맥주 명령 감지"
+        cmd_key = :butterbeer
         message = ButterbeerCommand.new(sender, sheet_manager).execute
 
       when /\[랜덤선물|선물\]/
         puts "[PARSER] 랜덤선물 명령 감지"
+        cmd_key = :random_gift
         message = RandomGiftCommand.new(sender, sheet_manager).execute
 
-      # ===== 기존 명령어 =====
+      # ===== 기존 즉시실행 명령어 =====
+      # 주의: 아래 3개는 run() 내부에서 post_status 한다는 전제
       when /\[주사위|d\d+|\d+d\]/i
         puts "[PARSER] 주사위 명령 감지"
         DiceCommand.run(mastodon_client, notification)
         return
-      
+
       when /\[동전|coin\]/i
         puts "[PARSER] 동전 명령 감지"
         CoinCommand.run(mastodon_client, notification)
         return
-      
+
       when /\[YN\]/i
         puts "[PARSER] YN 명령 감지"
         YnCommand.run(mastodon_client, notification)
@@ -280,19 +357,49 @@ module CommandParser
         return
       end
 
-      # 공통 답글 처리
+      # 공통 답글 처리 (message가 문자열일 때만)
       if message && message != :player_not_found
-        puts "[PARSER] 답글 전송: #{message[0..50]}..."
-        safe_reply(mastodon_client, notification, sender, message)
+        puts "[PARSER] 답글 전송 준비(cmd=#{cmd_key}): #{message.to_s[0..50]}..."
+        safe_reply(mastodon_client, notification, sender, message, cmd_key: (cmd_key || :default))
       end
 
     rescue => e
       puts "[에러] 명령어 처리 실패: #{e.message}"
-      puts "  ↳ #{e.backtrace.first(3).join("\n  ↳ ")}"
+      puts "  ↳ #{e.backtrace.first(5).join("\n  ↳ ")}"
     end
   end
 
+  # -----------------------------------
+  # HTML 정제 (Mastodon content 대응)
+  # - br/p를 줄바꿈으로
+  # - 엔티티 디코딩(CGI.unescapeHTML)
+  # -----------------------------------
   def self.clean_html(html)
-    html.gsub(/<[^>]*>/, '').gsub('&nbsp;', ' ').strip
+    return "" if html.nil?
+
+    s = html.to_s
+
+    # 줄바꿈 유지
+    s = s.gsub(/<br\s*\/?>/i, "\n")
+         .gsub(/<\/p\s*>/i, "\n")
+         .gsub(/<p[^>]*>/i, "")
+
+    # 태그 제거
+    s = s.gsub(/<[^>]*>/, "")
+
+    # HTML 엔티티 처리
+    begin
+      s = CGI.unescapeHTML(s)
+    rescue
+      # CGI가 없거나 예외면 그냥 둠
+    end
+
+    # nbsp 등 정리 + 공백 정리
+    s = s.gsub("\u00A0", " ")
+         .gsub(/[ \t]+\n/, "\n")
+         .gsub(/\n{3,}/, "\n\n")
+         .strip
+
+    s
   end
 end
