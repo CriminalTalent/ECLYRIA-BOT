@@ -10,6 +10,15 @@ require_relative 'commands/bet_command'
 require_relative 'commands/dice_command'
 require_relative 'commands/coin_command'
 require_relative 'commands/yn_command'
+require_relative 'commands/pickup_command'
+require_relative 'commands/snowman_command'
+require_relative 'commands/butterbeer_command'
+require_relative 'commands/gladrags_command'
+require_relative 'commands/puddifoot_command'
+require_relative 'commands/honeydukes_command'
+require_relative 'commands/zonko_command'
+require_relative 'commands/scrivenshaft_command'
+require_relative 'commands/shrieking_shack_command'
 
 # ============================================
 # command_parser.rb
@@ -208,6 +217,44 @@ module CommandParser
         puts "[PARSER] 베팅 명령 감지: #{amount}G"
         message = BetCommand.new(sender, amount, sheet_manager).execute
 
+      # ===== 호그스미드 이벤트 명령어 =====
+      when /\[글래드래그스|옷가게\]/
+        puts "[PARSER] 글래드래그스 명령 감지"
+        message = GladragsCommand.new(sender, sheet_manager).execute
+
+      when /\[푸디풋|찻집\]/
+        puts "[PARSER] 푸디풋 명령 감지"
+        message = PuddifootCommand.new(sender, sheet_manager).execute
+
+      when /\[허니듀크스|사탕가게\]/
+        puts "[PARSER] 허니듀크스 명령 감지"
+        message = HoneyDukesCommand.new(sender, sheet_manager).execute
+
+      when /\[종코|장난감\]/
+        puts "[PARSER] 종코 명령 감지"
+        message = ZonkoCommand.new(sender, sheet_manager).execute
+
+      when /\[스크리븐샤프트|깃펜\]/
+        puts "[PARSER] 스크리븐샤프트 명령 감지"
+        message = ScrivenshaftCommand.new(sender, sheet_manager).execute
+
+      when /\[악쓰는오두막|오두막\]/
+        puts "[PARSER] 악쓰는 오두막 명령 감지"
+        message = ShriekingShackCommand.new(sender, sheet_manager).execute
+
+      when /\[줍기\]/
+        puts "[PARSER] 줍기 명령 감지"
+        message = PickupCommand.new(sender, sheet_manager).execute
+
+      when /\[눈사람\]/
+        puts "[PARSER] 눈사람 명령 감지"
+        message = SnowmanCommand.new(sender, sheet_manager).execute
+
+      when /\[버터맥주\]/
+        puts "[PARSER] 버터맥주 명령 감지"
+        message = ButterbeerCommand.new(sender, sheet_manager).execute
+
+      # ===== 기존 명령어 =====
       when /\[주사위|d\d+|\d+d\]/i
         puts "[PARSER] 주사위 명령 감지"
         DiceCommand.run(mastodon_client, notification)
