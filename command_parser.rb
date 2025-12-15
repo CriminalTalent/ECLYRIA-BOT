@@ -285,33 +285,33 @@ module CommandParser
         message = BetCommand.new(sender, amount, sheet_manager).execute
 
       # ===== 호그스미드 이벤트 명령어 =====
-      when /\[글래드래그스|옷가게\]/
-        puts "[PARSER] 글래드래그스 명령 감지"
+      when /\[옷가게\]/
+        puts "[PARSER] 옷가게 명령 감지"
         cmd_key = :gladrags
         message = GladragsCommand.new(sender, sheet_manager).execute
 
-      when /\[푸디풋|찻집\]/
-        puts "[PARSER] 푸디풋 명령 감지"
+      when /\[찻집\]/
+        puts "[PARSER] 찻집 명령 감지"
         cmd_key = :puddifoot
         message = PuddifootCommand.new(sender, sheet_manager).execute
 
-      when /\[허니듀크스|사탕가게\]/
+      when /\[허니듀크스\]/
         puts "[PARSER] 허니듀크스 명령 감지"
         cmd_key = :honeydukes
         message = HoneyDukesCommand.new(sender, sheet_manager).execute
 
-      when /\[종코|장난감\]/
-        puts "[PARSER] 종코 명령 감지"
+      when /\[사탕가게\]/
+        puts "[PARSER] 사탕가게 명령 감지"
+        cmd_key = :honeydukes
+        message = HoneyDukesCommand.new(sender, sheet_manager).execute
+
+      when /\[장난감\]/
+        puts "[PARSER] 장난감 명령 감지"
         cmd_key = :zonko
         message = ZonkoCommand.new(sender, sheet_manager).execute
 
-      when /\[스크리븐샤프트|깃펜\]/
-        puts "[PARSER] 스크리븐샤프트 명령 감지"
-        cmd_key = :scrivenshaft
-        message = ScrivenshaftCommand.new(sender, sheet_manager).execute
-
-      when /\[악쓰는오두막|오두막\]/
-        puts "[PARSER] 악쓰는 오두막 명령 감지"
+      when /\[오두막\]/
+        puts "[PARSER] 오두막 명령 감지"
         cmd_key = :shrieking_shack
         message = ShriekingShackCommand.new(sender, sheet_manager).execute
 
@@ -330,8 +330,8 @@ module CommandParser
         cmd_key = :butterbeer
         message = ButterbeerCommand.new(sender, sheet_manager).execute
 
-      when /\[랜덤선물|선물\]/
-        puts "[PARSER] 랜덤선물 명령 감지"
+      when /\[선물\]/
+        puts "[PARSER] 선물 명령 감지"
         cmd_key = :random_gift
         message = RandomGiftCommand.new(sender, sheet_manager).execute
 
