@@ -19,6 +19,7 @@ require_relative 'commands/honeydukes_command'
 require_relative 'commands/zonko_command'
 require_relative 'commands/scrivenshaft_command'
 require_relative 'commands/shrieking_shack_command'
+require_relative 'commands/random_gift_command'
 
 # ============================================
 # command_parser.rb
@@ -253,6 +254,10 @@ module CommandParser
       when /\[버터맥주\]/
         puts "[PARSER] 버터맥주 명령 감지"
         message = ButterbeerCommand.new(sender, sheet_manager).execute
+
+      when /\[랜덤선물|선물\]/
+        puts "[PARSER] 랜덤선물 명령 감지"
+        message = RandomGiftCommand.new(sender, sheet_manager).execute
 
       # ===== 기존 명령어 =====
       when /\[주사위|d\d+|\d+d\]/i
