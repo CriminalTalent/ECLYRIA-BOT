@@ -1,73 +1,69 @@
 # commands/random_gift_command.rb
-# encoding: UTF-8
-
 class RandomGiftCommand
   GIFTS = [
     # 마법 아이템 (20개)
-    "작은 물약병", "깃털 부적", "수정 구슬", "마법 동전", "행운의 돌멩이",
-    "반짝이는 가루", "작은 두루마리", "마법 종이학", "빛나는 구슬", "수호 부적",
-    "작은 거울", "마법 리본", "별가루 주머니", "달빛 구슬", "요정 가루",
-    "마법 스티커", "빛나는 돌", "작은 수정", "마법 열쇠", "신비한 깃털",
+    "마법 물약병", "수정 구슬", "은빛 부적", "보호 목걸이", "마법 반지",
+    "투명 망토 조각", "시간의 모래시계", "예언의 수정", "마법 거울",
+    "룬 문자 돌", "마법 지팡이 홀더", "마나석", "정화의 촛불",
+    "소원의 별", "마법 나침반", "행운의 클로버", "변신 가루",
+    "텔레포트 가루", "마법 가방", "차원의 열쇠",
     
     # 문구류 (20개)
-    "깃펜", "잉크병", "양피지", "작은 노트", "책갈피",
-    "스탬프", "편지지", "봉투", "스티커", "엽서",
-    "메모지", "색연필", "크레용", "지우개", "자",
-    "클립", "스탬프 패드", "리본", "스티커 세트", "색종이",
+    "불사조 깃펜", "용 가죽 노트", "마법 잉크", "자동 필기 깃펜",
+    "사라지는 잉크", "편지지 세트", "밀랍 인장", "양피지 두루마리",
+    "책갈피", "마법 자", "지우개", "연필 세트", "만년필",
+    "스케치북", "메모장", "포스트잇", "클립 세트", "스탬프",
+    "폴더", "필통",
     
     # 장난감/게임 (20개)
-    "작은 피규어", "마법 카드", "미니 체스", "주사위", "팽이",
-    "요요", "공", "미니 인형", "작은 로봇", "장난감 빗자루",
-    "작은 망원경", "나침반", "호루라기", "비눗방울", "마법 풍선",
-    "미니 퍼즐", "작은 북", "종", "썰매", "눈송이 장식",
+    "마법사 체스말", "폭발 스냅 카드", "미니 피규어", "마법 카드",
+    "요요", "팽이", "구슬 세트", "마법 주사위", "퍼즐",
+    "인형", "미니카", "블록", "보드게임", "트레이딩 카드",
+    "스티커", "배지", "키링", "자석", "칼레이도스코프", "탄성공",
     
     # 의류/액세서리 (40개)
-    "스카프", "장갑", "모자", "머리띠", "목도리",
-    "뱃지", "핀", "브로치", "반지", "팔찌",
-    "목걸이", "귀걸이", "헤어핀", "머리끈", "손수건",
-    "양말", "벨트", "넥타이", "리본", "머플러",
-    "숄", "베레모", "비니", "털모자", "귀마개",
-    "장갑 세트", "니트 장갑", "가죽 장갑", "팔찌 세트", "발찌",
-    "초커", "펜던트", "로켓", "체인", "코르사주",
-    "타이핀", "커프스", "시계줄", "키링", "가방 고리"
+    "목도리", "머플러", "스카프", "장갑", "벙어리장갑", "털모자",
+    "비니", "헤어밴드", "머리띠", "리본", "헤어핀", "머리끈",
+    "뱃지", "브로치", "핀", "단추", "패치", "와펜",
+    "팔찌", "발찌", "목걸이", "귀걸이", "반지", "반지(은)",
+    "반지(금)", "헤어클립", "머리빗", "거울", "손수건",
+    "파우치", "동전지갑", "카드지갑", "열쇠고리", "스트랩",
+    "양말", "레그워머", "암워머", "귀마개", "마스크", "안대"
   ]
 
   def initialize(student_id, sheet_manager)
-    @student_id = student_id.gsub('@', '')
+    @student_id = student_id
     @sheet_manager = sheet_manager
   end
 
   def execute
-    puts "[GIFT] START user=#{@student_id}"
-    
-    # 플레이어 확인
-    player = @sheet_manager.find_user(@student_id)
+    player = @sheet_manager.get_player(@student_id)
     unless player
-      puts "[GIFT] ERROR: player not found (@#{@student_id})"
-      return "@#{@student_id} 아직 학적부에 등록되지 않았어요."
+      puts "[DEBUG] 플레이어 찾을 수 없음: #{@student_id}"
+      return "학적부에 없는 학생이구나, 교수님께 가보렴."
     end
 
-    # 100개 중 랜덤 선택
+    if player[:galleons].to_i < 0
+      return "갈레온이 마이너스 상태라 선물을 받을 수 없단다."
+    end
+
+    # 랜덤 선물 선택
     gift = GIFTS.sample
-    puts "[GIFT] 선택된 선물: #{gift}"
-
-    # 현재 아이템 목록 가져오기
-    current_items = player[:items].to_s.split(',').map(&:strip)
+    
+    # 인벤토리에 아이템 추가
+    current_items = player[:items].to_s.split(",").map(&:strip)
     current_items << gift
-    new_items = current_items.join(',')
-
-    puts "[GIFT] 기존 아이템: #{player[:items]}"
-    puts "[GIFT] 새 아이템: #{new_items}"
-
-    # 아이템 업데이트
-    @sheet_manager.update_user(@student_id, {
-      items: new_items
-    })
-
-    message = "@#{@student_id} 랜덤 선물 상자를 열었어요!\n"
-    message += "#{gift}을(를) 받았어요!"
-
-    puts "[GIFT] SUCCESS: #{message}"
-    return message
+    player[:items] = current_items.join(",")
+    
+    # 업데이트
+    update_result = @sheet_manager.update_player(player)
+    unless update_result
+      puts "[ERROR] 선물 추가 실패: #{@student_id}"
+      return "선물을 받는 중 오류가 발생했습니다."
+    end
+    
+    puts "[DEBUG] 선물 추가 완료: #{@student_id} -> #{gift}"
+    
+    return "랜덤 선물: #{gift}\n주머니에 추가되었습니다!"
   end
 end
