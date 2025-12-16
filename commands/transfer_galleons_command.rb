@@ -1,40 +1,78 @@
 # ============================================
-# commands/transfer_galleons_command.rb (멘션 추가 버전)
+# commands/transfer_item_command.rb (양도 로직 개선)
 # ============================================
-class TransferGalleonsCommand
-  def initialize(sender, receiver, amount, sheet_manager)
+class TransferItemCommand
+  def initialize(sender, receiver, item_name, sheet_manager)
     @sender = sender.gsub('@', '')
     @receiver = receiver.gsub('@', '')
-    @amount = amount
+    @item_name = item_name.strip
     @sheet_manager = sheet_manager
   end
 
   def execute
+    puts "[TRANSFER] START from=#{@sender} to=#{@receiver} item=#{@item_name}"
+    
+    # -----------------------------------------
+    # 1) 보내는 사람 확인
+    # -----------------------------------------
     sender_user = @sheet_manager.find_user(@sender)
     unless sender_user
+      puts "[TRANSFER] ERROR: sender not found (@#{@sender})"
       return "@#{@sender} 어머, 손님이 누구시더라? 입학부터 하고 오세요~"
     end
 
-    if sender_user[:galleons].to_i < 0
-      return "@#{@sender} 어머머, 빚쟁이는 돈 못 보내요! 갈레온부터 갚고 오세요~"
-    end
-
+    # -----------------------------------------
+    # 2) 받는 사람 확인
+    # -----------------------------------------
     receiver_user = @sheet_manager.find_user(@receiver)
     unless receiver_user
+      puts "[TRANSFER] ERROR: receiver not found (@#{@receiver})"
       return "@#{@sender} 어머나, @#{@receiver}님이 학교에 없는 것 같은데요?"
     end
 
-    if sender_user[:galleons].to_i < @amount
-      return "@#{@sender} 어? 갈레온이 부족한데요? 지금 #{sender_user[:galleons]}개밖에 없잖아요~"
+    # -----------------------------------------
+    # 3) 보내는 사람 인벤토리 확인
+    # -----------------------------------------
+    inventory = sender_user[:items].to_s.split(",").map(&:strip)
+    unless inventory.include?(@item_name)
+      puts "[TRANSFER] ERROR: item not in inventory"
+      return "@#{@sender} 어? #{@item_name}은(는) 안 가지고 계신 것 같은데요?"
     end
 
-    # 송금 처리
-    new_sender = sender_user[:galleons].to_i - @amount
-    new_receiver = receiver_user[:galleons].to_i + @amount
+    # -----------------------------------------
+    # 4) 아이템 양도 가능 여부 확인
+    #    - 아이템 시트에 없는 것(이벤트/선물) = 양도 가능
+    #    - 아이템 시트에 있는 것 = transferable 체크
+    # -----------------------------------------
+    item = @sheet_manager.find_item(@item_name)
+    
+    if item
+      # 아이템 시트에 등록된 경우
+      puts "[TRANSFER] 아이템 정보 있음: #{item.inspect}"
+      
+      # transferable 플래그 확인
+      transferable = item[:transferable]
+      
+      unless transferable
+        puts "[TRANSFER] BLOCK: item not transferable"
+        return "@#{@sender} #{@item_name}은(는) 양도할 수 없는 물건이에요."
+      end
+    else
+      # 아이템 시트에 없는 경우 (이벤트/선물 등)
+      puts "[TRANSFER] 아이템 정보 없음 → 양도 가능 (이벤트/선물 아이템)"
+    end
 
-    @sheet_manager.update_user(@sender, { galleons: new_sender })
-    @sheet_manager.update_user(@receiver, { galleons: new_receiver })
+    # -----------------------------------------
+    # 5) 양도 처리
+    # -----------------------------------------
+    inventory.delete(@item_name)
+    receiver_inventory = receiver_user[:items].to_s.split(",").map(&:strip)
+    receiver_inventory << @item_name
 
-    return "@#{@sender} #{@amount}갈레온 잘 보냈어요! @#{@receiver}님한테 줬어요~ 남은 돈은 #{new_sender}갈레온!"
+    @sheet_manager.update_user(@sender, { items: inventory.join(",") })
+    @sheet_manager.update_user(@receiver, { items: receiver_inventory.join(",") })
+
+    puts "[TRANSFER] SUCCESS"
+    return "@#{@sender} #{@item_name} 잘 전달했어요! @#{@receiver}님한테 줬어요~"
   end
 end
