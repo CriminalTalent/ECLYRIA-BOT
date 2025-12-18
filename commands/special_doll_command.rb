@@ -1,12 +1,14 @@
 # commands/special_doll_command.rb
-# 특별한 인형 뽑기 - 이미지 첨부 + 사용자 지급
+# 특별한 인형 뽑기 - 50갈레온 차감 + 이미지 첨부 + 사용자 지급
 
 class SpecialDollCommand
+  PRICE = 50
+
   def self.run(mastodon_client, sheet_manager, notification)
     begin
       account_info = notification["account"] || {}
       raw_sender   = account_info["acct"].to_s
-      sender       = raw_sender.split('@').first # 서버 붙은 acct 정리
+      sender       = raw_sender.split('@').first
       status_id    = notification.dig("status", "id")
 
       unless status_id
@@ -27,7 +29,19 @@ class SpecialDollCommand
         return
       end
 
-      # 2. 랜덤 인형 가져오기
+      current_galleons = player[:galleons].to_i
+
+      # 2. 갈레온 체크
+      if current_galleons < PRICE
+        mastodon_client.post_status(
+          "@#{sender} 갈레온이 부족합니다. (필요: #{PRICE}G)",
+          reply_to_id: status_id,
+          visibility: "unlisted"
+        )
+        return
+      end
+
+      # 3. 랜덤 인형 가져오기
       doll = sheet_manager.get_random_doll
       unless doll
         mastodon_client.post_status(
@@ -44,7 +58,23 @@ class SpecialDollCommand
       puts "[DOLL] 선택된 인형: #{doll_name}"
       puts "[DOLL] 이미지 URL: #{image_url}"
 
-      # 3. 이미지 업로드
+      # 4. 인벤토리 + 갈레온 계산 (※ 아직 시트 반영 전)
+      current_items = player[:items].to_s
+        .split(',')
+        .map(&:strip)
+        .reject(&:empty?)
+
+      current_items << doll_name
+      new_galleons = current_galleons - PRICE
+
+      # 5. 시트 업데이트 (★ 가장 중요: 한 번에)
+      sheet_manager.update_user(
+        sender,
+        galleons: new_galleons,
+        items: current_items.join(',')
+      )
+
+      # 6. 이미지 업로드
       media_id = mastodon_client.upload_media_from_url(
         image_url,
         description: doll_name
@@ -52,7 +82,7 @@ class SpecialDollCommand
 
       unless media_id
         mastodon_client.post_status(
-          "인형을 꺼내는 중 문제가 발생했습니다. 이미지를 확인해주세요.",
+          "@#{sender} 인형은 지급되었으나 이미지 업로드에 실패했습니다.",
           reply_to_id: status_id,
           visibility: "unlisted"
         )
@@ -61,24 +91,17 @@ class SpecialDollCommand
 
       puts "[DOLL] 이미지 업로드 성공: #{media_id}"
 
-      # 4. 사용자 인벤토리 반영
-      current_items = player[:items].to_s
-        .split(',')
-        .map(&:strip)
-        .reject(&:empty?)
-
-      current_items << doll_name
-
-      sheet_manager.update_user(
-        sender,
-        items: current_items.join(',')
-      )
-
-      # 5. 답글 전송 (이미지 포함)
-      message = "@#{sender} #{doll_name} 이 나왔다!"
+      # 7. 답글 전송
+      message = <<~MSG
+        @#{sender}
+        특별한 인형을 구매했습니다!
+        - 인형: #{doll_name}
+        - 가격: #{PRICE}G
+        - 잔액: #{new_galleons}G
+      MSG
 
       mastodon_client.post_status(
-        message,
+        message.strip,
         reply_to_id: status_id,
         visibility: "unlisted",
         media_ids: [media_id]
