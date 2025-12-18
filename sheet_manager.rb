@@ -2,119 +2,130 @@
 require 'google/apis/sheets_v4'
 
 class SheetManager
-  attr_reader :service, :sheet_id
-
   USERS_SHEET = '사용자'.freeze
   ITEMS_SHEET = '아이템'.freeze
   DOLL_SHEET  = '특별한인형'.freeze
-  SHOP_LOG    = '상점로그'.freeze
+  SHOP_LOG_SHEET = '상점로그'.freeze
 
   def initialize(service, sheet_id)
     @service = service
     @sheet_id = sheet_id
-    check_sheets
   end
 
-  def check_sheets
-    sheets = service.get_spreadsheet(sheet_id).sheets.map { |s| s.properties.title }
-    puts "[SHEETS] 사용 가능한 시트: #{sheets.join(', ')}"
-  rescue => e
-    puts "[SHEETS 오류] #{e.message}"
-  end
-
-  # =====================
-  # 기본 read / write
-  # =====================
+  # =========================
+  # 기본 read / write / append
+  # =========================
   def read(sheet, range = 'A:Z')
-    service.get_spreadsheet_values(sheet_id, "#{sheet}!#{range}").values || []
+    r = "#{sheet}!#{range}"
+    @service.get_spreadsheet_values(@sheet_id, r).values || []
   rescue
     []
   end
 
+  def write(sheet, range, values)
+    body = Google::Apis::SheetsV4::ValueRange.new(values: values)
+    @service.update_spreadsheet_value(
+      @sheet_id,
+      "#{sheet}!#{range}",
+      body,
+      value_input_option: 'USER_ENTERED'
+    )
+  end
+
   def append(sheet, row)
     body = Google::Apis::SheetsV4::ValueRange.new(values: [row])
-    service.append_spreadsheet_value(
-      sheet_id,
+    @service.append_spreadsheet_value(
+      @sheet_id,
       "#{sheet}!A:Z",
       body,
       value_input_option: 'USER_ENTERED'
     )
   end
 
-  # =====================
+  # =========================
   # 사용자
-  # =====================
+  # =========================
   def find_user(acct)
-    acct = acct.gsub('@', '')
+    acct = acct.to_s.gsub('@','').strip
     rows = read(USERS_SHEET, 'A:K')
-    rows[1..].each_with_index do |r, i|
-      next unless r[0]&.gsub('@','') == acct
-      return {
-        row: i + 2,
-        id: r[0],
-        name: r[1],
-        galleons: r[2].to_i,
-        items: r[3].to_s
-      }
+    header = rows.first
+
+    rows[1..].each_with_index do |row, i|
+      next unless row[0]&.gsub('@','') == acct
+      return build_user(header, row, i + 2)
     end
     nil
   end
 
-  def update_user(user)
-    write_row = [
-      user[:id],
-      user[:name],
-      user[:galleons],
-      user[:items]
-    ]
-    service.update_spreadsheet_value(
-      sheet_id,
-      "#{USERS_SHEET}!A#{user[:row]}:D#{user[:row]}",
-      Google::Apis::SheetsV4::ValueRange.new(values: [write_row]),
-      value_input_option: 'USER_ENTERED'
-    )
-  end
+  # ✅ 핵심 수정부
+  def update_user(acct, *args)
+    acct = acct.to_s.gsub('@','').strip
+    rows = read(USERS_SHEET, 'A:K')
 
-  # =====================
-  # 아이템
-  # =====================
-  def find_item(item_name)
-    rows = read(ITEMS_SHEET, 'A:F')
-    rows[1..].each do |r|
-      next if r[0].nil?
-      next unless r[0].strip == item_name
+    updates =
+      if args.length == 1 && args[0].is_a?(Hash)
+        args[0]
+      elsif args.length == 2
+        { args[0].to_sym => args[1] }
+      else
+        raise ArgumentError, "update_user 인자 오류"
+      end
 
-      return {
-        name: r[0].to_s.strip,
-        description: r[1].to_s.strip,
-        price: r[2].to_i,
-        sellable: r[3].to_s == 'TRUE',
-        usable: r[4].to_s == 'TRUE',
-        image: r[5].to_s
-      }
+    rows.each_with_index do |row, idx|
+      next if idx == 0
+      next unless row[0]&.gsub('@','') == acct
+
+      updates.each do |key, value|
+        col = {
+          id: 0,
+          name: 1,
+          galleons: 2,
+          items: 3,
+          memo: 4,
+          house: 5,
+          last_bet_date: 6,
+          bet_count: 7,
+          attendance_date: 8,
+          last_tarot_date: 9,
+          house_score: 10
+        }[key.to_sym]
+
+        row[col] = value if col
+      end
+
+      write(USERS_SHEET, "A#{idx+1}:K#{idx+1}", [row])
+      return true
     end
-    nil
+    false
   end
 
-  # =====================
+  def build_user(header, row, line)
+    {
+      row: line,
+      id: row[0],
+      name: row[1],
+      galleons: row[2].to_i,
+      items: row[3].to_s,
+      memo: row[4],
+      house: row[5]
+    }
+  end
+
+  # =========================
   # 특별한 인형
-  # =====================
+  # =========================
   def get_random_doll
     rows = read(DOLL_SHEET, 'A:B')
-    dolls = rows[1..].map do |r|
-      next if r[0].nil? || r[1].nil?
+    return nil if rows.size < 2
+    rows[1..].sample.then do |r|
       { name: r[0], image_url: r[1] }
-    end.compact
-    dolls.sample
+    end
   end
 
-  # =====================
-  # 로그
-  # =====================
-  def log(kind, user, detail = '')
-    append(SHOP_LOG, [
+  def log(user, kind, detail = "")
+    append(SHOP_LOG_SHEET, [
       Time.now.strftime('%Y-%m-%d %H:%M:%S'),
-      kind, user, detail
+      user, kind, detail
     ])
   end
 end
