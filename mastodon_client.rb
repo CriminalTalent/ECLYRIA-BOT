@@ -21,20 +21,22 @@ class MastodonClient
     @post_block_until = Time.at(0)
   end
 
-  # ---------------------------
-  # UTF-8 안전 처리
-  # ---------------------------
+  # --------------------------------------------------
+  # 공통 유틸
+  # --------------------------------------------------
   def safe_utf8(str)
     return "" if str.nil?
     s = str.to_s.dup.force_encoding('UTF-8')
-    s.valid_encoding? ? s : s.encode('UTF-8', 'binary', invalid: :replace, undef: :replace, replace: '?')
+    s.valid_encoding? ? s : s.encode('UTF-8', 'binary',
+      invalid: :replace, undef: :replace, replace: '?'
+    )
   rescue
     str.to_s
   end
 
-  # ---------------------------
-  # 공통 HTTP 요청
-  # ---------------------------
+  # --------------------------------------------------
+  # 기본 HTTP 요청
+  # --------------------------------------------------
   def request(method:, path:, params: {}, form: nil)
     uri = URI.join(@base_url, path)
     uri.query = URI.encode_www_form(params) if method == :get && params.any?
@@ -50,23 +52,22 @@ class MastodonClient
         r.set_form_data(form) if form
         r
       else
-        raise "Unsupported HTTP method"
+        raise "Unsupported method"
       end
 
     res = @http.request(req)
     body = JSON.parse(res.body) rescue {}
-
     [res, body]
   rescue => e
-    puts "[HTTP 오류] #{e.class}: #{safe_utf8(e.message)}"
+    puts "[HTTP ERROR] #{e.message}"
     [nil, {}]
   end
 
-  # ---------------------------
-  # 🔔 알림 polling (main.rb용)
-  # ---------------------------
-  def notifications(since_id: nil, limit: 30)
-    params = { limit: limit }
+  # --------------------------------------------------
+  # 🔔 알림(멘션) 조회 (main.rb에서 사용)
+  # --------------------------------------------------
+  def notifications(since_id: nil)
+    params = { limit: 30 }
     params[:since_id] = since_id if since_id
 
     res, body = request(
@@ -79,54 +80,52 @@ class MastodonClient
     body
   end
 
-  # ---------------------------
-  # Google Drive URL 변환
-  # ---------------------------
-  def convert_google_drive_url(url)
-    if url =~ /drive\.google\.com\/file\/d\/([^\/]+)/
-      return "https://drive.google.com/uc?export=download&id=#{$1}"
-    end
-    url
-  end
-
-  # ---------------------------
-  # URL → PNG 업로드
-  # ---------------------------
+  # --------------------------------------------------
+  # 📎 URL → 이미지 업로드 (PNG/JPG 대응)
+  # --------------------------------------------------
   def upload_media_from_url(image_url, description: nil)
-    download_url = convert_google_drive_url(image_url)
-    puts "[MEDIA-URL] 다운로드: #{download_url}"
+    download_url =
+      image_url
+        .sub(%r{/view\?usp=sharing}, '')
+        .sub(%r{/file/d/}, '/uc?export=download&id=')
 
-    Tempfile.create(['doll', '.png']) do |file|
+    ext = File.extname(download_url).downcase
+    ext = ".png" if ext.empty?
+
+    Tempfile.create(['media', ext]) do |file|
       file.binmode
-      URI.open(
-        download_url,
-        'User-Agent' => 'Mozilla/5.0',
-        ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE
-      ) { |io| file.write(io.read) }
-
+      URI.open(download_url, 'User-Agent' => 'Mozilla/5.0') do |io|
+        file.write(io.read)
+      end
       file.rewind
+
       upload_media(file.path, description: description)
     end
   rescue => e
-    puts "[MEDIA-URL 오류] #{e.class}: #{safe_utf8(e.message)}"
+    puts "[MEDIA-URL ERROR] #{e.message}"
     nil
   end
 
-  # ---------------------------
-  # PNG 업로드
-  # ---------------------------
+  # --------------------------------------------------
+  # 📤 미디어 업로드
+  # --------------------------------------------------
   def upload_media(path, description: nil)
     uri = URI.join(@base_url, "/api/v2/media")
     boundary = SecureRandom.hex(16)
 
-    file = File.binread(path)
-    filename = File.basename(path)
+    file_data = File.binread(path)
+    filename  = File.basename(path)
+    mime =
+      case File.extname(path).downcase
+      when ".png" then "image/png"
+      else "image/jpeg"
+      end
 
     body = []
     body << "--#{boundary}\r\n"
     body << "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n"
-    body << "Content-Type: image/png\r\n\r\n"
-    body << file
+    body << "Content-Type: #{mime}\r\n\r\n"
+    body << file_data
     body << "\r\n--#{boundary}--\r\n"
 
     req = Net::HTTP::Post.new(uri)
@@ -134,21 +133,15 @@ class MastodonClient
     req['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
     req.body = body.join
 
-    puts "[MEDIA] 업로드 시도: #{filename}"
-
     res = @http.request(req)
     return JSON.parse(res.body)['id'] if res.code.to_i.between?(200, 299)
 
-    puts "[MEDIA] 업로드 실패: #{res.code}"
-    nil
-  rescue => e
-    puts "[MEDIA 오류] #{e.class}: #{safe_utf8(e.message)}"
     nil
   end
 
-  # ---------------------------
-  # 글 작성
-  # ---------------------------
+  # --------------------------------------------------
+  # 📝 툿 작성
+  # --------------------------------------------------
   def post_status(text, reply_to_id: nil, visibility: "public", media_ids: [])
     return if Time.now < @post_block_until
 
@@ -169,14 +162,13 @@ class MastodonClient
         rescue
           Time.now + 600
         end
-
       puts "[POST] rate limit → #{@post_block_until} 까지 중단"
     end
   end
 
-  # ---------------------------
-  # reply 헬퍼
-  # ---------------------------
+  # --------------------------------------------------
+  # ↩️ 답글
+  # --------------------------------------------------
   def reply(status, text, visibility: "unlisted", media_ids: [])
     post_status(
       text,
