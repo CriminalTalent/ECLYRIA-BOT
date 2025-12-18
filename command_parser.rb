@@ -22,6 +22,7 @@ require_relative 'commands/zonko_command'
 require_relative 'commands/scrivenshaft_command'
 require_relative 'commands/shrieking_shack_command'
 require_relative 'commands/random_gift_command'
+require_relative 'commands/special_doll_command'
 
 # ============================================
 # command_parser.rb
@@ -60,6 +61,7 @@ module CommandParser
     snowman: 10,
     butterbeer: 10,
     random_gift: 10,
+    special_doll: 30,
 
     # 아래 3개는 run() 내부에서 자체 reply를 한다면
     # 이 쿨타임은 직접 적용하지 않고(=safe_reply를 안 타니까)
@@ -335,8 +337,13 @@ module CommandParser
         cmd_key = :random_gift
         message = RandomGiftCommand.new(sender, sheet_manager).execute
 
+      # ===== 특별한 인형 명령어 (이미지 첨부) =====
+      when /\[특별한\s*인형\]/
+        puts "[PARSER] 특별한 인형 명령 감지"
+        SpecialDollCommand.run(mastodon_client, sheet_manager, notification)
+        return
+
       # ===== 기존 즉시실행 명령어 =====
-      # 주의: 아래 3개는 run() 내부에서 post_status 한다는 전제
       when /\[주사위|d\d+|\d+d\]/i
         puts "[PARSER] 주사위 명령 감지"
         DiceCommand.run(mastodon_client, notification)
