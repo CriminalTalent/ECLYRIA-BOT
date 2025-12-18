@@ -1,4 +1,6 @@
 # mastodon_client.rb
+# encoding: UTF-8
+
 require 'net/http'
 require 'json'
 require 'uri'
@@ -10,8 +12,8 @@ require 'securerandom'
 
 class MastodonClient
   def initialize(base_url:, token:)
-    @base_url = base_url.sub(%r{/\z}, '')
-    @token    = token
+    @base_url = base_url.to_s.sub(%r{/\z}, '')
+    @token    = token.to_s
 
     uri = URI(@base_url)
     @http = Net::HTTP.new(uri.host, uri.port)
@@ -21,154 +23,219 @@ class MastodonClient
     @post_block_until = Time.at(0)
   end
 
-  # -------------------------
-  # UTF-8 안전 처리
-  # -------------------------
   def safe_utf8(str)
     return "" if str.nil?
-    s = str.to_s.dup.force_encoding('UTF-8')
+    s = str.to_s.dup
+    s.force_encoding('UTF-8')
     s.valid_encoding? ? s : s.encode('UTF-8', 'binary', invalid: :replace, undef: :replace, replace: '?')
   rescue
     str.to_s
   end
 
-  # -------------------------
-  # 기본 HTTP 요청
-  # -------------------------
-  def request(method:, path:, params: {}, form: nil)
+  # -----------------------------
+  # Low-level request helper
+  # -----------------------------
+  def request(method:, path:, params: {}, form: nil, headers: {})
     uri = URI.join(@base_url, path)
-    uri.query = URI.encode_www_form(params) if method == :get && params.any?
 
-    headers = { "Authorization" => "Bearer #{@token}" }
+    if method == :get && params && params.any?
+      uri.query = URI.encode_www_form(params)
+    end
+
+    base_headers = { "Authorization" => "Bearer #{@token}" }.merge(headers || {})
 
     req =
       case method
       when :get
-        Net::HTTP::Get.new(uri, headers)
+        Net::HTTP::Get.new(uri, base_headers)
       when :post
-        r = Net::HTTP::Post.new(uri, headers)
+        r = Net::HTTP::Post.new(uri, base_headers)
         r.set_form_data(form) if form
         r
       else
-        raise "Unsupported method"
+        raise "Unsupported method: #{method}"
       end
 
     res = @http.request(req)
-    body = JSON.parse(res.body) rescue {}
+    body =
+      begin
+        JSON.parse(res.body)
+      rescue
+        {}
+      end
     [res, body]
   rescue => e
-    puts "[HTTP ERROR] #{e.class}: #{e.message}"
+    puts "[HTTP 오류] #{e.class} - #{e.message}"
     [nil, {}]
   end
 
-  # -------------------------
-  # 🔥 notifications (limit 호환)
-  # -------------------------
-  def notifications(limit: 30, since_id: nil)
-    params = { limit: limit }
-    params[:since_id] = since_id if since_id
+  # -----------------------------
+  # Notifications (mentions poll)
+  # Mastodon API: GET /api/v1/notifications
+  # params: limit, since_id, max_id, min_id, types[], exclude_types[]
+  # -----------------------------
+  def notifications(limit: 30, since_id: nil, max_id: nil, min_id: nil, types: nil, exclude_types: nil)
+    params = {}
+    params[:limit]    = limit.to_i if limit
+    params[:since_id] = since_id.to_s if since_id
+    params[:max_id]   = max_id.to_s if max_id
+    params[:min_id]   = min_id.to_s if min_id
 
-    _, body = request(
-      method: :get,
-      path: "/api/v1/notifications",
-      params: params
-    )
+    # 배열 파라미터는 mastodon이 types[]=mention 형태를 받음
+    if types && types.respond_to?(:each)
+      i = 0
+      types.each do |t|
+        params["types[#{i}]"] = t.to_s
+        i += 1
+      end
+    end
 
+    if exclude_types && exclude_types.respond_to?(:each)
+      i = 0
+      exclude_types.each do |t|
+        params["exclude_types[#{i}]"] = t.to_s
+        i += 1
+      end
+    end
+
+    res, body = request(method: :get, path: "/api/v1/notifications", params: params)
+    return [] unless res && res.code.to_i.between?(200, 299)
     body.is_a?(Array) ? body : []
-  rescue => e
-    puts "[NOTIFICATIONS ERROR] #{e.class}: #{e.message}"
-    []
   end
 
-  # -------------------------
-  # URL → 이미지 업로드 (PNG 대응)
-  # -------------------------
+  # -----------------------------
+  # Media upload helpers
+  # -----------------------------
+  def content_type_for(path)
+    ext = File.extname(path.to_s).downcase
+    return "image/png"  if ext == ".png"
+    return "image/webp" if ext == ".webp"
+    return "image/gif"  if ext == ".gif"
+    "image/jpeg"
+  end
+
+  # Google Drive 공유 링크를 "직접 다운로드" URL로 변환
+  def normalize_download_url(url)
+    u = url.to_s.strip
+
+    # 1) .../file/d/<ID>/view?usp=sharing 형태
+    if u =~ %r{/file/d/([^/]+)}
+      file_id = Regexp.last_match(1)
+      return "https://drive.google.com/uc?export=download&id=#{file_id}"
+    end
+
+    # 2) ...open?id=<ID> 형태
+    if u.include?("drive.google.com") && u.include?("id=")
+      begin
+        uri = URI(u)
+        qs = URI.decode_www_form(uri.query || "").to_h
+        if qs["id"] && !qs["id"].empty?
+          return "https://drive.google.com/uc?export=download&id=#{qs["id"]}"
+        end
+      rescue
+      end
+    end
+
+    # 3) 이미 uc?export=download&id= 형태면 그대로
+    u
+  end
+
   def upload_media_from_url(image_url, description: nil)
-    download_url =
-      image_url
-        .gsub(/\/view\?usp=sharing/, '')
-        .sub('/file/d/', '/uc?export=download&id=')
+    download_url = normalize_download_url(image_url)
 
     ext = File.extname(download_url)
-    ext = '.png' if ext.empty?
+    ext = ".png" if ext.nil? || ext.empty? # 사용자가 "전부 png"라고 했으니 기본 png
 
     Tempfile.create(['doll', ext]) do |file|
       file.binmode
-      URI.open(download_url, 'User-Agent' => 'Mozilla/5.0') { |io| file.write(io.read) }
+      URI.open(download_url, 'User-Agent' => 'Mozilla/5.0') do |io|
+        file.write(io.read)
+      end
       file.rewind
+
       upload_media(file.path, description: description)
     end
   rescue => e
-    puts "[MEDIA-URL ERROR] #{e.class}: #{e.message}"
+    puts "[MEDIA-URL 오류] #{e.class} - #{e.message}"
     nil
   end
 
-  # -------------------------
-  # 로컬 파일 업로드
-  # -------------------------
   def upload_media(path, description: nil)
     uri = URI.join(@base_url, "/api/v2/media")
     boundary = SecureRandom.hex(16)
 
-    file_data = File.binread(path)
-    filename  = File.basename(path)
+    filename = File.basename(path.to_s)
+    file_bin = File.binread(path.to_s)
+    ctype    = content_type_for(path)
 
-    content_type =
-      case File.extname(path).downcase
-      when '.png' then 'image/png'
-      when '.jpg', '.jpeg' then 'image/jpeg'
-      else 'application/octet-stream'
-      end
-
-    body = []
+    # multipart body (바이너리 안전)
+    body = +""
     body << "--#{boundary}\r\n"
     body << "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n"
-    body << "Content-Type: #{content_type}\r\n\r\n"
-    body << file_data
-    body << "\r\n--#{boundary}--\r\n"
+    body << "Content-Type: #{ctype}\r\n\r\n"
+    body << file_bin
+    body << "\r\n"
+
+    if description && !description.to_s.strip.empty?
+      body << "--#{boundary}\r\n"
+      body << "Content-Disposition: form-data; name=\"description\"\r\n\r\n"
+      body << safe_utf8(description.to_s)
+      body << "\r\n"
+    end
+
+    body << "--#{boundary}--\r\n"
 
     req = Net::HTTP::Post.new(uri)
     req['Authorization'] = "Bearer #{@token}"
-    req['Content-Type']  = "multipart/form-data; boundary=#{boundary}"
-    req.body = body.join
+    req['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
+    req.body = body
 
     res = @http.request(req)
-    return JSON.parse(res.body)['id'] if res.code.to_i.between?(200, 299)
+    if res.code.to_i.between?(200, 299)
+      j = JSON.parse(res.body) rescue {}
+      return j["id"]
+    end
 
-    puts "[MEDIA ERROR] 업로드 실패: #{res.code}"
+    puts "[MEDIA] 업로드 실패 code=#{res.code} body=#{res.body.to_s[0..200]}"
     nil
   rescue => e
-    puts "[MEDIA ERROR] #{e.class}: #{e.message}"
+    puts "[MEDIA] 업로드 오류 #{e.class} - #{e.message}"
     nil
   end
 
-  # -------------------------
-  # 상태 전송
-  # -------------------------
+  # -----------------------------
+  # Posting
+  # -----------------------------
   def post_status(text, reply_to_id: nil, visibility: "public", media_ids: [])
     return if Time.now < @post_block_until
 
     form = { status: safe_utf8(text), visibility: visibility }
     form[:in_reply_to_id] = reply_to_id if reply_to_id
-    media_ids.each { |id| form["media_ids[]"] = id }
+
+    Array(media_ids).each_with_index do |id, i|
+      form["media_ids[#{i}]"] = id
+    end
 
     res, _ = request(method: :post, path: "/api/v1/statuses", form: form)
 
-    if res&.code == '429'
+    if res && res.code.to_s == '429'
       reset = res['x-ratelimit-reset']
       @post_block_until =
         begin
-          reset ? Time.parse(reset) : Time.now + 600
+          reset ? Time.parse(reset) : (Time.now + 600)
         rescue
           Time.now + 600
         end
+      puts "[POST] rate limit → #{@post_block_until} 까지 중단"
     end
+
+    res
   end
 
   def reply(status, text, visibility: "unlisted", media_ids: [])
     post_status(
       text,
-      reply_to_id: status["id"],
+      reply_to_id: status.is_a?(Hash) ? status["id"] : status,
       visibility: visibility,
       media_ids: media_ids
     )
