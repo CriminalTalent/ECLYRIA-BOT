@@ -21,9 +21,9 @@ class MastodonClient
     @post_block_until = Time.at(0)
   end
 
-  # ----------------------------------
+  # ---------------------------
   # UTF-8 안전 처리
-  # ----------------------------------
+  # ---------------------------
   def safe_utf8(str)
     return "" if str.nil?
     s = str.to_s.dup.force_encoding('UTF-8')
@@ -32,9 +32,9 @@ class MastodonClient
     str.to_s
   end
 
-  # ----------------------------------
+  # ---------------------------
   # 공통 HTTP 요청
-  # ----------------------------------
+  # ---------------------------
   def request(method:, path:, params: {}, form: nil)
     uri = URI.join(@base_url, path)
     uri.query = URI.encode_www_form(params) if method == :get && params.any?
@@ -62,38 +62,47 @@ class MastodonClient
     [nil, {}]
   end
 
-  # ----------------------------------
-  # Google Drive URL → 직접 다운로드 URL
-  # ----------------------------------
+  # ---------------------------
+  # 🔔 알림 polling (main.rb용)
+  # ---------------------------
+  def notifications(since_id: nil, limit: 30)
+    params = { limit: limit }
+    params[:since_id] = since_id if since_id
+
+    res, body = request(
+      method: :get,
+      path: "/api/v1/notifications",
+      params: params
+    )
+
+    return [] unless res&.code.to_i == 200
+    body
+  end
+
+  # ---------------------------
+  # Google Drive URL 변환
+  # ---------------------------
   def convert_google_drive_url(url)
     if url =~ /drive\.google\.com\/file\/d\/([^\/]+)/
       return "https://drive.google.com/uc?export=download&id=#{$1}"
     end
-
-    if url =~ /drive\.google\.com\/open\?id=([^&]+)/
-      return "https://drive.google.com/uc?export=download&id=#{$1}"
-    end
-
     url
   end
 
-  # ----------------------------------
-  # URL → PNG 다운로드 → 업로드
-  # ----------------------------------
+  # ---------------------------
+  # URL → PNG 업로드
+  # ---------------------------
   def upload_media_from_url(image_url, description: nil)
     download_url = convert_google_drive_url(image_url)
     puts "[MEDIA-URL] 다운로드: #{download_url}"
 
     Tempfile.create(['doll', '.png']) do |file|
       file.binmode
-
       URI.open(
         download_url,
         'User-Agent' => 'Mozilla/5.0',
         ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE
-      ) do |io|
-        file.write(io.read)
-      end
+      ) { |io| file.write(io.read) }
 
       file.rewind
       upload_media(file.path, description: description)
@@ -103,21 +112,21 @@ class MastodonClient
     nil
   end
 
-  # ----------------------------------
-  # PNG 업로드 (핵심)
-  # ----------------------------------
+  # ---------------------------
+  # PNG 업로드
+  # ---------------------------
   def upload_media(path, description: nil)
     uri = URI.join(@base_url, "/api/v2/media")
     boundary = SecureRandom.hex(16)
 
-    file_content = File.binread(path)
+    file = File.binread(path)
     filename = File.basename(path)
 
     body = []
     body << "--#{boundary}\r\n"
     body << "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n"
     body << "Content-Type: image/png\r\n\r\n"
-    body << file_content
+    body << file
     body << "\r\n--#{boundary}--\r\n"
 
     req = Net::HTTP::Post.new(uri)
@@ -125,27 +134,21 @@ class MastodonClient
     req['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
     req.body = body.join
 
-    puts "[MEDIA] 업로드 시도: #{filename} (#{file_content.bytesize} bytes)"
+    puts "[MEDIA] 업로드 시도: #{filename}"
 
     res = @http.request(req)
+    return JSON.parse(res.body)['id'] if res.code.to_i.between?(200, 299)
 
-    if res.code.to_i.between?(200, 299)
-      media_id = JSON.parse(res.body)['id']
-      puts "[MEDIA] 업로드 성공: #{media_id}"
-      return media_id
-    else
-      puts "[MEDIA] 업로드 실패: #{res.code}"
-      puts res.body
-      nil
-    end
+    puts "[MEDIA] 업로드 실패: #{res.code}"
+    nil
   rescue => e
     puts "[MEDIA 오류] #{e.class}: #{safe_utf8(e.message)}"
     nil
   end
 
-  # ----------------------------------
-  # 글 작성 (reply / media 포함)
-  # ----------------------------------
+  # ---------------------------
+  # 글 작성
+  # ---------------------------
   def post_status(text, reply_to_id: nil, visibility: "public", media_ids: [])
     return if Time.now < @post_block_until
 
@@ -154,16 +157,9 @@ class MastodonClient
       visibility: visibility
     }
     form[:in_reply_to_id] = reply_to_id if reply_to_id
+    media_ids.each_with_index { |id, i| form["media_ids[#{i}]"] = id }
 
-    media_ids.each_with_index do |id, i|
-      form["media_ids[#{i}]"] = id
-    end
-
-    res, _ = request(
-      method: :post,
-      path: "/api/v1/statuses",
-      form: form
-    )
+    res, _ = request(method: :post, path: "/api/v1/statuses", form: form)
 
     if res&.code == '429'
       reset = res['x-ratelimit-reset']
@@ -178,9 +174,9 @@ class MastodonClient
     end
   end
 
-  # ----------------------------------
-  # 답글 헬퍼
-  # ----------------------------------
+  # ---------------------------
+  # reply 헬퍼
+  # ---------------------------
   def reply(status, text, visibility: "unlisted", media_ids: [])
     post_status(
       text,
