@@ -132,7 +132,7 @@ class MastodonClient
   end
 
   # ---------------------------
-  # 미디어 업로드 (로컬 파일)
+  # 미디어 업로드 (로컬 파일) - 인코딩 수정
   # ---------------------------
   def upload_media(file_path, description: nil)
     return nil unless File.exist?(file_path)
@@ -140,9 +140,7 @@ class MastodonClient
     uri = URI.join(@base_url, "/api/v2/media")
     boundary = SecureRandom.hex(16)
     
-    body_parts = []
-    
-    # 파일 파트
+    # 파일 읽기
     file_content = File.binread(file_path)
     filename = File.basename(file_path)
     mime_type = case File.extname(file_path).downcase
@@ -152,23 +150,28 @@ class MastodonClient
                 else 'application/octet-stream'
                 end
     
-    body_parts << "--#{boundary}\r\n"
-    body_parts << "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n"
-    body_parts << "Content-Type: #{mime_type}\r\n\r\n"
-    body_parts << file_content
-    body_parts << "\r\n"
+    # 모든 파트를 바이너리로 생성
+    body_parts = []
+    
+    # 파일 파트
+    body_parts << "--#{boundary}\r\n".force_encoding('ASCII-8BIT')
+    body_parts << "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n".force_encoding('ASCII-8BIT')
+    body_parts << "Content-Type: #{mime_type}\r\n\r\n".force_encoding('ASCII-8BIT')
+    body_parts << file_content.force_encoding('ASCII-8BIT')
+    body_parts << "\r\n".force_encoding('ASCII-8BIT')
     
     # description 파트 (옵션)
     if description
-      body_parts << "--#{boundary}\r\n"
-      body_parts << "Content-Disposition: form-data; name=\"description\"\r\n\r\n"
-      body_parts << description
-      body_parts << "\r\n"
+      body_parts << "--#{boundary}\r\n".force_encoding('ASCII-8BIT')
+      body_parts << "Content-Disposition: form-data; name=\"description\"\r\n\r\n".force_encoding('ASCII-8BIT')
+      body_parts << description.to_s.force_encoding('ASCII-8BIT')
+      body_parts << "\r\n".force_encoding('ASCII-8BIT')
     end
     
-    body_parts << "--#{boundary}--\r\n"
+    body_parts << "--#{boundary}--\r\n".force_encoding('ASCII-8BIT')
     
-    body_str = body_parts.join
+    # 바이너리로 조합
+    body_str = body_parts.join(''.force_encoding('ASCII-8BIT'))
     
     req = Net::HTTP::Post.new(uri)
     req['Authorization'] = "Bearer #{@token}"
