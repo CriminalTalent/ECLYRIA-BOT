@@ -39,9 +39,7 @@ class MastodonClient
     uri = URI.join(@base_url, path)
     uri.query = URI.encode_www_form(params) if method == :get && params.any?
 
-    headers = {
-      "Authorization" => "Bearer #{@token}"
-    }
+    headers = { "Authorization" => "Bearer #{@token}" }
 
     req =
       case method
@@ -64,7 +62,26 @@ class MastodonClient
   end
 
   # -------------------------
-  # URL → 미디어 업로드 (PNG 대응)
+  # 🔥 notifications (limit 호환)
+  # -------------------------
+  def notifications(limit: 30, since_id: nil)
+    params = { limit: limit }
+    params[:since_id] = since_id if since_id
+
+    _, body = request(
+      method: :get,
+      path: "/api/v1/notifications",
+      params: params
+    )
+
+    body.is_a?(Array) ? body : []
+  rescue => e
+    puts "[NOTIFICATIONS ERROR] #{e.class}: #{e.message}"
+    []
+  end
+
+  # -------------------------
+  # URL → 이미지 업로드 (PNG 대응)
   # -------------------------
   def upload_media_from_url(image_url, description: nil)
     download_url =
@@ -77,11 +94,8 @@ class MastodonClient
 
     Tempfile.create(['doll', ext]) do |file|
       file.binmode
-      URI.open(download_url, 'User-Agent' => 'Mozilla/5.0') do |io|
-        file.write(io.read)
-      end
+      URI.open(download_url, 'User-Agent' => 'Mozilla/5.0') { |io| file.write(io.read) }
       file.rewind
-
       upload_media(file.path, description: description)
     end
   rescue => e
@@ -90,7 +104,7 @@ class MastodonClient
   end
 
   # -------------------------
-  # 로컬 파일 → Mastodon 업로드
+  # 로컬 파일 업로드
   # -------------------------
   def upload_media(path, description: nil)
     uri = URI.join(@base_url, "/api/v2/media")
@@ -129,21 +143,14 @@ class MastodonClient
   end
 
   # -------------------------
-  # 상태(post) 전송 (이미지 첨부 핵심)
+  # 상태 전송
   # -------------------------
   def post_status(text, reply_to_id: nil, visibility: "public", media_ids: [])
     return if Time.now < @post_block_until
 
-    form = {
-      status: safe_utf8(text),
-      visibility: visibility
-    }
+    form = { status: safe_utf8(text), visibility: visibility }
     form[:in_reply_to_id] = reply_to_id if reply_to_id
-
-    # ⭐ Mastodon 방식 (중요)
-    media_ids.each do |id|
-      form["media_ids[]"] = id
-    end
+    media_ids.each { |id| form["media_ids[]"] = id }
 
     res, _ = request(method: :post, path: "/api/v1/statuses", form: form)
 
@@ -155,13 +162,9 @@ class MastodonClient
         rescue
           Time.now + 600
         end
-      puts "[POST] rate limit → #{@post_block_until} 까지 중단"
     end
   end
 
-  # -------------------------
-  # reply 헬퍼
-  # -------------------------
   def reply(status, text, visibility: "unlisted", media_ids: [])
     post_status(
       text,
