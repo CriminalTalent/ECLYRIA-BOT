@@ -26,25 +26,24 @@ class SheetManager
       required = [USERS_SHEET, ITEMS_SHEET]
       missing = required - sheet_names
       
-      if missing.any?
-        puts "[경고] 누락된 시트: #{missing.join(', ')}"
-      end
+      puts "[경고] 누락된 시트: #{missing.join(', ')}" if missing.any?
     rescue => e
       puts "[SHEETS-CHECK 오류] #{e.message}"
     end
   end
 
-  # 기본 read 메서드
+  # =========================
+  # 기본 read / write / append
+  # =========================
   def read(sheet_name, a1 = 'A:Z')
     range = a1_range(sheet_name, a1)
     result = service.get_spreadsheet_values(sheet_id, range)
     result.values || []
   rescue => e
-    puts "[READ 오류] 시트: #{sheet_name}, 범위: #{a1}, 에러: #{e.message}"
+    puts "[READ 오류] #{sheet_name} #{a1} : #{e.message}"
     []
   end
 
-  # 기본 write 메서드
   def write(sheet_name, a1, values)
     range = a1_range(sheet_name, a1)
     body = Google::Apis::SheetsV4::ValueRange.new(values: values)
@@ -56,7 +55,6 @@ class SheetManager
     )
   end
 
-  # 기본 append 메서드
   def append(sheet_name, row)
     range = a1_range(sheet_name, 'A:Z')
     body = Google::Apis::SheetsV4::ValueRange.new(values: [row])
@@ -68,224 +66,105 @@ class SheetManager
     )
   end
 
-  # 사용자 찾기
+  # =========================
+  # 사용자 처리
+  # =========================
   def find_user(acct)
     clean_acct = acct.to_s.gsub('@', '').strip
     rows = read(USERS_SHEET, 'A:K')
     return nil if rows.empty?
-    
-    header = rows.first || []
-    puts "[FIND_USER] 검색 ID: #{clean_acct}"
 
+    header = rows.first
     rows[1..].each_with_index do |r, idx|
       next if r.nil? || r[0].nil?
-      row_id = r[0].to_s.gsub('@', '').strip
-      
-      if row_id == clean_acct
-        puts "[FIND_USER] 찾음: #{clean_acct} (행: #{idx+2})"
-        return convert_user_row(header, r, idx + 1)
-      end
+      return convert_user_row(header, r, idx + 1) if r[0].to_s.gsub('@','').strip == clean_acct
     end
-    
-    puts "[FIND_USER] 못 찾음: #{clean_acct}"
     nil
   end
 
-  # 사용자 업데이트
+  # ✅ special_doll_command 호환용
+  def get_player(acct)
+    find_user(acct)
+  end
+
   def update_user(acct, updates)
     clean_acct = acct.to_s.gsub('@', '').strip
     rows = read(USERS_SHEET, 'A:K')
     header = rows.first || []
 
     rows.each_with_index do |row, idx|
-      next if idx == 0
-      next if row.nil? || row[0].nil?
-      
-      row_id = row[0].to_s.gsub('@', '').strip
-      next unless row_id == clean_acct
+      next if idx == 0 || row.nil? || row[0].nil?
+      next unless row[0].to_s.gsub('@','').strip == clean_acct
 
       updates.each do |key, value|
-        col = case key.to_sym
-              when :id then 0
-              when :name then 1
-              when :galleons then 2
-              when :items then 3
-              when :memo then 4
-              when :house then 5
-              when :last_bet_date then 6
-              when :bet_count then 7
-              when :attendance_date then 8
-              when :last_tarot_date then 9
-              when :house_score then 10
-              else nil
-              end
-        
-        if col
-          while row.length <= col
-            row << ""
-          end
-          row[col] = value
-        end
+        col = {
+          id: 0, name: 1, galleons: 2, items: 3, memo: 4,
+          house: 5, last_bet_date: 6, bet_count: 7,
+          attendance_date: 8, last_tarot_date: 9, house_score: 10
+        }[key.to_sym]
+
+        next unless col
+        row[col] = value
       end
 
       write(USERS_SHEET, "A#{idx+1}:K#{idx+1}", [row])
-      puts "[UPDATE_USER] 업데이트 완료: #{clean_acct}"
       return true
     end
-    
-    puts "[UPDATE_USER] 실패: #{clean_acct} 찾을 수 없음"
     false
   end
 
-  # 아이템 찾기
-  def find_item(item_name)
-    rows = read(ITEMS_SHEET, 'A:E')
-    
-    if rows.empty?
-      puts "[FIND_ITEM] ERROR: '#{ITEMS_SHEET}' 시트가 비어있음"
-      return nil
-    end
-    
-    header = rows.first || []
-    puts "[FIND_ITEM] 검색 아이템: #{item_name}"
-
-    rows[1..].each_with_index do |r, idx|
-      next if r.nil? || r[0].nil?
-      
-      row_item_name = r[0].to_s.strip
-      
-      if row_item_name == item_name.to_s.strip
-        puts "[FIND_ITEM] 찾음: #{item_name} (행: #{idx+2})"
-        result = convert_item_row(header, r)
-        return result
-      end
-    end
-    
-    puts "[FIND_ITEM] 못 찾음: #{item_name}"
-    nil
+  # ✅ special_doll_command 호환용
+  def update_player(player)
+    update_user(player[:id], items: player[:items])
   end
 
-  # ============================================
-  # 특별한 인형 - 랜덤 가져오기
-  # ============================================
+  # =========================
+  # 특별한 인형
+  # =========================
   def get_random_doll
-    puts "[DOLL] 랜덤 인형 가져오기 시작"
-    
     rows = read(DOLL_SHEET, 'A:B')
-    
-    if rows.empty?
-      puts "[DOLL] ERROR: '#{DOLL_SHEET}' 시트가 비어있음"
-      return nil
-    end
-    
-    if rows.length < 2
-      puts "[DOLL] ERROR: 헤더만 있고 데이터가 없음"
-      return nil
-    end
-    
-    puts "[DOLL] 전체 행 수: #{rows.length}"
-    
-    # 헤더 제외하고 유효한 데이터만 추출
-    dolls = rows[1..].map do |row|
-      next if row.nil? || row[0].nil? || row[1].nil?
-      
-      name = row[0].to_s.strip
-      image_url = row[1].to_s.strip
-      
-      # 빈 값 체크
-      next if name.empty? || image_url.empty?
-      
-      {
-        name: name,
-        image_url: image_url
-      }
+    return nil if rows.length < 2
+
+    dolls = rows[1..].map do |r|
+      next if r.nil? || r[0].nil? || r[1].nil?
+      { name: r[0].to_s.strip, image_url: r[1].to_s.strip }
     end.compact
-    
-    if dolls.empty?
-      puts "[DOLL] ERROR: 유효한 인형 데이터가 없음"
-      return nil
-    end
-    
-    puts "[DOLL] 유효한 인형 수: #{dolls.length}"
-    
-    # 랜덤 선택
-    selected = dolls.sample
-    puts "[DOLL] 선택된 인형: #{selected[:name]}"
-    
-    selected
+
+    dolls.sample
   rescue => e
-    puts "[DOLL 오류] #{e.class}: #{e.message}"
-    puts e.backtrace.first(5).join("\n  ↳ ")
+    puts "[DOLL 오류] #{e.message}"
     nil
   end
 
-  # 사용자 행 변환
+  # =========================
+  # 변환 유틸
+  # =========================
   def convert_user_row(header, row, row_index)
     {
       row: row_index,
       id: row[0].to_s.strip,
       name: row[1].to_s.strip,
-      galleons: (row[2] || 0).to_i,
-      items: (row[3] || "").to_s.strip,
-      memo: (row[4] || "").to_s.strip,
-      house: (row[5] || "").to_s.strip,
-      last_bet_date: (row[6] || "").to_s.strip,
-      bet_count: (row[7] || 0).to_i,
-      attendance_date: (row[8] || "").to_s.strip,
-      last_tarot_date: (row[9] || "").to_s.strip,
-      house_score: (row[10] || 0).to_i
+      galleons: row[2].to_i,
+      items: row[3].to_s.strip,
+      memo: row[4].to_s.strip,
+      house: row[5].to_s.strip,
+      last_bet_date: row[6].to_s.strip,
+      bet_count: row[7].to_i,
+      attendance_date: row[8].to_s.strip,
+      last_tarot_date: row[9].to_s.strip,
+      house_score: row[10].to_i
     }
   end
 
-  # 아이템 행 변환
-  def convert_item_row(header, row)
-    # A열: 아이템명
-    # B열: 설명 (긴 텍스트)
-    # C열: 가격
-    # D열: 판매여부 (체크박스)
-    # E열: 사용 및 양도가능 (체크박스)
-    
-    price_value = row[2].to_s.strip
-    price = price_value.empty? ? 0 : price_value.to_i
-    
-    # B열: 설명
-    description = (row[1] || "").to_s.strip
-    
-    # D열: 판매여부
-    sellable_value = row[3]
-    sellable = (sellable_value == true || sellable_value.to_s.strip.upcase == "TRUE")
-    
-    # E열: 사용 및 양도가능
-    usable_value = row[4]
-    usable = (usable_value == true || usable_value.to_s.strip.upcase == "TRUE")
-    
-    {
-      name: row[0].to_s.strip,
-      price: price,
-      description: description,
-      sellable: sellable,
-      usable: usable,
-      purchasable: sellable,
-      transferable: true,
-      effect: "",
-      consumable: usable
-    }
+  def a1_range(sheet, a1)
+    a1.include?('!') ? a1 : "#{sheet}!#{a1}"
   end
 
-  # A1 범위 생성
-  def a1_range(sheet_name, a1)
-    if a1.include?('!')
-      a1
-    else
-      "#{sheet_name}!#{a1}"
-    end
-  end
-
-  # 상점 로그 기록
   def log_command(user, kind, value = nil, detail = "")
-    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-    row = [timestamp, kind, user, value.to_s, detail.to_s]
-    append(SHOP_LOG_SHEET, row)
+    append(SHOP_LOG_SHEET, [
+      Time.now.strftime('%Y-%m-%d %H:%M:%S'),
+      kind, user, value.to_s, detail.to_s
+    ])
   rescue => e
     puts "[로그 오류] #{e.message}"
   end
