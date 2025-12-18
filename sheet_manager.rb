@@ -1,4 +1,4 @@
-# sheet_manager.rb (상점봇 전용 - 열 매핑 수정 버전)
+# sheet_manager.rb (상점봇 전용 - 특별한인형 기능 추가)
 require 'google/apis/sheets_v4'
 
 class SheetManager
@@ -8,6 +8,7 @@ class SheetManager
   PROFESSOR_SHEET  = '교수'.freeze
   SHOP_LOG_SHEET   = '상점로그'.freeze
   ITEMS_SHEET      = '아이템'.freeze
+  DOLL_SHEET       = '특별한인형'.freeze
 
   def initialize(service, sheet_id)
     @service  = service
@@ -164,6 +165,60 @@ class SheetManager
     nil
   end
 
+  # ============================================
+  # 특별한 인형 - 랜덤 가져오기
+  # ============================================
+  def get_random_doll
+    puts "[DOLL] 랜덤 인형 가져오기 시작"
+    
+    rows = read(DOLL_SHEET, 'A:B')
+    
+    if rows.empty?
+      puts "[DOLL] ERROR: '#{DOLL_SHEET}' 시트가 비어있음"
+      return nil
+    end
+    
+    if rows.length < 2
+      puts "[DOLL] ERROR: 헤더만 있고 데이터가 없음"
+      return nil
+    end
+    
+    puts "[DOLL] 전체 행 수: #{rows.length}"
+    
+    # 헤더 제외하고 유효한 데이터만 추출
+    dolls = rows[1..].map do |row|
+      next if row.nil? || row[0].nil? || row[1].nil?
+      
+      name = row[0].to_s.strip
+      image_url = row[1].to_s.strip
+      
+      # 빈 값 체크
+      next if name.empty? || image_url.empty?
+      
+      {
+        name: name,
+        image_url: image_url
+      }
+    end.compact
+    
+    if dolls.empty?
+      puts "[DOLL] ERROR: 유효한 인형 데이터가 없음"
+      return nil
+    end
+    
+    puts "[DOLL] 유효한 인형 수: #{dolls.length}"
+    
+    # 랜덤 선택
+    selected = dolls.sample
+    puts "[DOLL] 선택된 인형: #{selected[:name]}"
+    
+    selected
+  rescue => e
+    puts "[DOLL 오류] #{e.class}: #{e.message}"
+    puts e.backtrace.first(5).join("\n  ↳ ")
+    nil
+  end
+
   # 사용자 행 변환
   def convert_user_row(header, row, row_index)
     {
@@ -182,7 +237,7 @@ class SheetManager
     }
   end
 
-  # 아이템 행 변환 (수정됨)
+  # 아이템 행 변환
   def convert_item_row(header, row)
     # A열: 아이템명
     # B열: 설명 (긴 텍스트)
