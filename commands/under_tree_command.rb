@@ -2,50 +2,81 @@
 # encoding: UTF-8
 
 class UnderTreeCommand
-  POSITIVE_EVENTS = [
-    { text: "트리 아래 선물이 가득해요!", reward: 5 },
-    { text: "반짝이는 조명이 아름다워요!", reward: 2 },
-    { text: "선물 상자에 제 이름이 적혀있어요!", reward: 4 },
-    { text: "트리 향기가 방 안 가득해요!", reward: 2 },
-    { text: "장식들이 반짝반짝 빛나요. 예뻐요!", reward: 3 },
-    { text: "트리 아래에서 가족 사진을 찍었어요!", reward: 3 },
-    { text: "작은 선물을 발견했어요. 누가 놓았을까요?", reward: 4 },
-    { text: "트리 불빛이 로맨틱해요!", reward: 2 },
-    { text: "트리 아래서 소원을 빌었어요!", reward: 3 },
-    { text: "크리스마스 분위기가 물씬 나요!", reward: 3 },
-    { text: "오너먼트가 햇빛에 반짝여요!", reward: 2 },
-    { text: "트리 별이 반짝이며 빛나요!", reward: 3 },
-    { text: "포장된 선물들이 색색이 예뻐요!", reward: 2 },
-    { text: "트리 아래서 편안하게 쉬었어요!", reward: 3 },
-    { text: "친구들과 트리 앞에서 추억을 만들었어요!", reward: 4 },
-    { text: "트리 장식을 만지작거리니 재밌어요!", reward: 2 },
-    { text: "크리스마스 음악을 들으며 행복해요!", reward: 3 },
-    { text: "트리 밑에서 숨은 선물을 찾았어요!", reward: 5 },
-    { text: "트리가 완벽하게 장식되어 있어요!", reward: 4 },
-    { text: "가장 행복한 크리스마스예요!", reward: 6 }
+  # 이상한 장식품들 (60% 확률)
+  WEIRD_ORNAMENTS = [
+    "말린 명태",
+    "마른 오징어",
+    "문어 다리",
+    "낡은 양말",
+    "구멍 난 속옷",
+    "헤진 칫솔",
+    "낡은 빗자루 솔",
+    "더러운 걸레",
+    "깨진 접시 조각",
+    "녹슨 못",
+    "찌그러진 캔",
+    "곰팡이 핀 빵",
+    "오래된 신문지",
+    "바스락거리는 비닐봉지",
+    "쓰레기통 뚜껑",
+    "낡은 장갑",
+    "헤진 수건",
+    "부러진 연필",
+    "쭈글쭈글한 종이컵",
+    "떨어진 단추",
+    "사용한 티백",
+    "빈 유리병",
+    "낡은 고무줄",
+    "뜯어진 포스트잇",
+    "낡은 지우개",
+    "구겨진 영수증",
+    "부러진 나뭇가지",
+    "시든 꽃잎",
+    "돌멩이",
+    "모래 한 줌"
   ]
 
-  NEGATIVE_EVENTS = [
-    { text: "트리가 넘어질 뻔했어요!", loss: 3 },
-    { text: "장식을 건드려서 떨어뜨렸어요. 깨졌어요!", loss: 5 },
-    { text: "트리 전구가 고장나서 교체해야 해요.", loss: 4 },
-    { text: "발에 장식이 걸려서 넘어졌어요!", loss: 3 },
-    { text: "트리 가지에 옷이 걸려서 찢어졌어요.", loss: 3 },
-    { text: "반려동물이 트리를 쓰러뜨렸어요!", loss: 6 },
-    { text: "트리 물을 엎질렀어요. 바닥이 다 젖었어요!", loss: 4 },
-    { text: "장식이 너무 많아서 트리가 기울었어요.", loss: 2 },
-    { text: "전구선이 엉켜서 풀다가 끊어졌어요!", loss: 5 },
-    { text: "트리에서 솔잎이 너무 많이 떨어져요.", loss: 2 },
-    { text: "트리 아래 선물이 없어요. 슬퍼요.", loss: 1 },
-    { text: "장식 하나가 발에 밟혀서 깨졌어요!", loss: 4 },
-    { text: "고양이가 트리를 타고 올라가요. 위험해요!", loss: 3 },
-    { text: "트리 별이 떨어져서 부러졌어요.", loss: 4 },
-    { text: "전선에 걸려 넘어질 뻔했어요!", loss: 2 },
-    { text: "트리 밑에 물이 새서 바닥이 상했어요.", loss: 5 },
-    { text: "장식을 정리하다가 손을 베었어요!", loss: 3 },
-    { text: "트리가 말라서 솔잎이 우수수 떨어져요.", loss: 3 },
-    { text: "전구가 합선되어서 교체 비용이...", loss: 6 },
-    { text: "트리를 옮기다가 허리를 삐끗했어요!", loss: 4 }
+  # 그럴듯한 장식품들 (30% 확률)
+  DECENT_ORNAMENTS = [
+    "빨간 리본",
+    "은색 리본",
+    "솔방울",
+    "작은 나뭇가지",
+    "종이 눈송이",
+    "색종이 체인",
+    "면 솜뭉치",
+    "털실 뭉치",
+    "작은 방울",
+    "병뚜껑",
+    "반짝이 가루 묻은 종이",
+    "색색의 구슬",
+    "작은 리본 묶음",
+    "포장지 조각",
+    "은박지",
+    "색깔 있는 실타래",
+    "작은 종",
+    "털실로 만든 폼폼",
+    "나뭇잎",
+    "열매"
+  ]
+
+  # 정식 오너먼트 (10% 확률)
+  PROPER_ORNAMENTS = [
+    "금색 크리스마스 볼",
+    "은색 크리스마스 볼",
+    "빨간 크리스마스 볼",
+    "초록 크리스마스 볼",
+    "반짝이는 별 장식",
+    "천사 장식",
+    "종 장식",
+    "눈사람 오너먼트",
+    "순록 장식",
+    "선물 상자 장식",
+    "지팡이 사탕 장식",
+    "징글벨",
+    "크리스마스 리스 미니어처",
+    "고드름 장식",
+    "스노우볼 오너먼트"
   ]
 
   def initialize(student_id, sheet_manager)
@@ -62,30 +93,43 @@ class UnderTreeCommand
     end
 
     current_galleons = player[:galleons].to_i
+    current_items = player[:items].to_s.split(",").map(&:strip).reject(&:empty?)
 
-    if rand < 0.5
-      event = POSITIVE_EVENTS.sample
-      amount = event[:reward]
-      new_galleons = current_galleons + amount
-      
-      message = "@#{@student_id} 트리 아래를 확인했어요!\n\n"
-      message += "#{event[:text]}\n\n"
-      message += "+#{amount}G\n"
-      message += "현재 잔액: #{new_galleons}G"
-    else
-      event = NEGATIVE_EVENTS.sample
-      amount = event[:loss]
-      new_galleons = current_galleons - amount
-      
-      message = "@#{@student_id} 트리 아래를 확인했어요!\n\n"
-      message += "#{event[:text]}\n\n"
-      message += "-#{amount}G\n"
-      message += "현재 잔액: #{new_galleons}G"
+    # 확률에 따라 장식품 선택
+    rand_value = rand
+    
+    if rand_value < 0.10  # 10% - 정식 오너먼트
+      ornament = PROPER_ORNAMENTS.sample
+      reward = rand(5..8)
+      type = "정식 오너먼트"
+    elsif rand_value < 0.40  # 30% - 그럴듯한 장식품
+      ornament = DECENT_ORNAMENTS.sample
+      reward = rand(2..4)
+      type = "그럴듯한 장식"
+    else  # 60% - 이상한 장식품
+      ornament = WEIRD_ORNAMENTS.sample
+      reward = rand(1..3)
+      type = "이상한 물건"
     end
 
-    @sheet_manager.update_user(@student_id, { galleons: new_galleons })
+    # 인벤토리에 추가
+    current_items << ornament
+    new_items = current_items.join(",")
+    new_galleons = current_galleons + reward
+
+    @sheet_manager.update_user(@student_id, {
+      galleons: new_galleons,
+      items: new_items
+    })
+
+    message = "@#{@student_id} 트리 아래에서 장식품을 찾았어요!\n\n"
+    message += "#{ornament}\n"
+    message += "(#{type})\n\n"
+    message += "+#{reward}G\n"
+    message += "현재 잔액: #{new_galleons}G\n"
+    message += "주머니에 추가되었어요!"
     
-    puts "[UNDER_TREE] SUCCESS"
+    puts "[UNDER_TREE] SUCCESS: #{ornament} (#{type})"
     return message
   end
 end
