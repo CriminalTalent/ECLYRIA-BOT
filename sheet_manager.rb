@@ -43,6 +43,36 @@ class SheetManager
   end
 
   # =========================
+  # 범용 read_values (다른 명령어들이 사용)
+  # =========================
+  def read_values(range)
+    @service.get_spreadsheet_values(@sheet_id, range).values || []
+  rescue
+    []
+  end
+
+  # =========================
+  # 아이템
+  # =========================
+  def find_item(item_name)
+    item_name = item_name.to_s.strip
+    rows = read(ITEMS_SHEET, 'A:E')
+    header = rows.first
+
+    rows[1..].each_with_index do |row, i|
+      next unless row[0]&.strip == item_name
+      return {
+        name: row[0],
+        description: row[1],
+        price: row[2].to_i,
+        sellable: row[3],  # TRUE/FALSE
+        usable: row[4]     # TRUE/FALSE
+      }
+    end
+    nil
+  end
+
+  # =========================
   # 사용자
   # =========================
   def find_user(acct)
@@ -107,8 +137,20 @@ class SheetManager
       galleons: row[2].to_i,
       items: row[3].to_s,
       memo: row[4],
-      house: row[5]
+      house: row[5],
+      last_bet_date: row[6],
+      bet_count: row[7].to_i,
+      attendance_date: row[8],
+      last_tarot_date: row[9],
+      house_score: row[10].to_i
     }
+  end
+
+  # =========================
+  # 갈레온 업데이트 (단독 메서드)
+  # =========================
+  def update_galleons(acct, new_amount)
+    update_user(acct, galleons: new_amount)
   end
 
   # =========================
