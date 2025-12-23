@@ -12,17 +12,14 @@ require_relative 'commands/bet_command'
 require_relative 'commands/dice_command'
 require_relative 'commands/coin_command'
 require_relative 'commands/yn_command'
+
+# 크리스마스 명령어만
 require_relative 'commands/pickup_command'
-require_relative 'commands/snowman_command'
-require_relative 'commands/butterbeer_command'
-require_relative 'commands/gladrags_command'
-require_relative 'commands/puddifoot_command'
-require_relative 'commands/honeydukes_command'
-require_relative 'commands/zonko_command'
-require_relative 'commands/scrivenshaft_command'
-require_relative 'commands/shrieking_shack_command'
-require_relative 'commands/random_gift_command'
-require_relative 'commands/special_doll_command'
+require_relative 'commands/gift_box_command'
+require_relative 'commands/marshmallow_command'
+require_relative 'commands/fireplace_command'
+require_relative 'commands/under_tree_command'
+require_relative 'commands/decorate_tree_command'
 
 # ============================================
 # command_parser.rb
@@ -38,8 +35,6 @@ module CommandParser
 
   # ------------------------------
   # 명령어별 쿨타임(초)
-  # - 유저가 연속으로 여러 명령을 쓰는 걸 막지 않도록 분리
-  # - "봇이 씹힌다" 체감 방지
   # ------------------------------
   COOLDOWN_BY_CMD = {
     buy: 10,
@@ -50,22 +45,15 @@ module CommandParser
     tarot: 30,
     bet: 10,
 
-    gladrags: 10,
-    puddifoot: 10,
-    honeydukes: 10,
-    zonko: 10,
-    scrivenshaft: 10,
-    shrieking_shack: 10,
-
+    # 크리스마스 명령어
     pickup: 5,
-    snowman: 10,
-    butterbeer: 10,
-    random_gift: 10,
-    special_doll: 30,
+    gift_box: 5,
+    marshmallow: 5,
+    fireplace: 5,
+    under_tree: 5,
+    decorate_tree: 10,
 
-    # 아래 3개는 run() 내부에서 자체 reply를 한다면
-    # 이 쿨타임은 직접 적용하지 않고(=safe_reply를 안 타니까)
-    # 참고용으로만 둡니다.
+    # 즉시실행
     dice: 0,
     coin: 0,
     yn: 0
@@ -166,7 +154,6 @@ module CommandParser
 
   # -----------------------------------
   # (내부) 쿨타임 체크/기록
-  # - acct + cmd_key 기준
   # -----------------------------------
   def self.cooldown_seconds_for(cmd_key)
     COOLDOWN_BY_CMD[cmd_key] || 10
@@ -197,19 +184,17 @@ module CommandParser
   end
 
   # -----------------------------------
-  # 유저별 답글 헬퍼 (reply_to 대상 안정화)
+  # 유저별 답글 헬퍼
   # -----------------------------------
   def self.safe_reply(mastodon_client, notification, acct, text, cmd_key: :default, visibility: "unlisted")
     return if text.nil? || text.to_s.strip.empty?
 
-    # 반드시 status.id에만 답글 (알림 id에 reply하는 실수 방지)
     status_id = notification.is_a?(Hash) ? notification.dig("status", "id") : nil
     unless status_id
-      puts "[REPLY-SKIP] @#{acct} status_id를 찾지 못함(알림 구조 확인 필요) → 답글 스킵"
+      puts "[REPLY-SKIP] @#{acct} status_id를 찾지 못함 → 답글 스킵"
       return
     end
 
-    # 명령어별 쿨타임 적용
     if cooldown_blocked?(acct, cmd_key)
       return
     end
@@ -286,62 +271,36 @@ module CommandParser
         cmd_key = :bet
         message = BetCommand.new(sender, amount, sheet_manager).execute
 
-      # ===== 호그스미드 이벤트 명령어 =====
-      when /\[옷가게\]/
-        puts "[PARSER] 옷가게 명령 감지"
-        cmd_key = :gladrags
-        message = GladragsCommand.new(sender, sheet_manager).execute
-
-      when /\[찻집\]/
-        puts "[PARSER] 찻집 명령 감지"
-        cmd_key = :puddifoot
-        message = PuddifootCommand.new(sender, sheet_manager).execute
-
-      when /\[허니듀크스\]/
-        puts "[PARSER] 허니듀크스 명령 감지"
-        cmd_key = :honeydukes
-        message = HoneyDukesCommand.new(sender, sheet_manager).execute
-
-      when /\[사탕가게\]/
-        puts "[PARSER] 사탕가게 명령 감지"
-        cmd_key = :honeydukes
-        message = HoneyDukesCommand.new(sender, sheet_manager).execute
-
-      when /\[장난감\]/
-        puts "[PARSER] 장난감 명령 감지"
-        cmd_key = :zonko
-        message = ZonkoCommand.new(sender, sheet_manager).execute
-
-      when /\[오두막\]/
-        puts "[PARSER] 오두막 명령 감지"
-        cmd_key = :shrieking_shack
-        message = ShriekingShackCommand.new(sender, sheet_manager).execute
-
-      when /\[줍기\]/
-        puts "[PARSER] 줍기 명령 감지"
+      # ===== 크리스마스 명령어 (6개만) =====
+      when /\[양말\]/
+        puts "[PARSER] 양말 명령 감지"
         cmd_key = :pickup
         message = PickupCommand.new(sender, sheet_manager).execute
 
-      when /\[눈사람\]/
-        puts "[PARSER] 눈사람 명령 감지"
-        cmd_key = :snowman
-        message = SnowmanCommand.new(sender, sheet_manager).execute
+      when /\[선물상자\]/
+        puts "[PARSER] 선물상자 명령 감지"
+        cmd_key = :gift_box
+        message = GiftBoxCommand.new(sender, sheet_manager).execute
 
-      when /\[버터맥주\]/
-        puts "[PARSER] 버터맥주 명령 감지"
-        cmd_key = :butterbeer
-        message = ButterbeerCommand.new(sender, sheet_manager).execute
+      when /\[마시멜로우\]/
+        puts "[PARSER] 마시멜로우 명령 감지"
+        cmd_key = :marshmallow
+        message = MarshmallowCommand.new(sender, sheet_manager).execute
 
-      when /\[선물\]/
-        puts "[PARSER] 선물 명령 감지"
-        cmd_key = :random_gift
-        message = RandomGiftCommand.new(sender, sheet_manager).execute
+      when /\[난로\]/
+        puts "[PARSER] 난로 명령 감지"
+        cmd_key = :fireplace
+        message = FireplaceCommand.new(sender, sheet_manager).execute
 
-      # ===== 특별한 인형 명령어 (이미지 첨부) =====
-      when /\[특별한\s*인형\]/
-        puts "[PARSER] 특별한 인형 명령 감지"
-        SpecialDollCommand.run(mastodon_client, sheet_manager, notification)
-        return
+      when /\[트리\s*아래\]/
+        puts "[PARSER] 트리 아래 명령 감지"
+        cmd_key = :under_tree
+        message = UnderTreeCommand.new(sender, sheet_manager).execute
+
+      when /\[트리\s*장식\]/
+        puts "[PARSER] 트리장식 명령 감지"
+        cmd_key = :decorate_tree
+        message = DecorateTreeCommand.new(sender, sheet_manager).execute
 
       # ===== 기존 즉시실행 명령어 =====
       when /\[주사위|d\d+|\d+d\]/i
@@ -364,7 +323,7 @@ module CommandParser
         return
       end
 
-      # 공통 답글 처리 (message가 문자열일 때만)
+      # 공통 답글 처리
       if message && message != :player_not_found
         puts "[PARSER] 답글 전송 준비(cmd=#{cmd_key}): #{message.to_s[0..50]}..."
         safe_reply(mastodon_client, notification, sender, message, cmd_key: (cmd_key || :default))
@@ -377,31 +336,24 @@ module CommandParser
   end
 
   # -----------------------------------
-  # HTML 정제 (Mastodon content 대응)
-  # - br/p를 줄바꿈으로
-  # - 엔티티 디코딩(CGI.unescapeHTML)
+  # HTML 정제
   # -----------------------------------
   def self.clean_html(html)
     return "" if html.nil?
 
     s = html.to_s
 
-    # 줄바꿈 유지
     s = s.gsub(/<br\s*\/?>/i, "\n")
          .gsub(/<\/p\s*>/i, "\n")
          .gsub(/<p[^>]*>/i, "")
 
-    # 태그 제거
     s = s.gsub(/<[^>]*>/, "")
 
-    # HTML 엔티티 처리
     begin
       s = CGI.unescapeHTML(s)
     rescue
-      # CGI가 없거나 예외면 그냥 둠
     end
 
-    # nbsp 등 정리 + 공백 정리
     s = s.gsub("\u00A0", " ")
          .gsub(/[ \t]+\n/, "\n")
          .gsub(/\n{3,}/, "\n\n")
