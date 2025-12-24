@@ -3,6 +3,7 @@ require 'time'
 require 'cgi'
 
 require_relative 'commands/buy_command'
+require_relative 'commands/sell_command'
 require_relative 'commands/transfer_item_command'
 require_relative 'commands/transfer_galleons_command'
 require_relative 'commands/use_item_command'
@@ -38,6 +39,7 @@ module CommandParser
   # ------------------------------
   COOLDOWN_BY_CMD = {
     buy: 10,
+    sell: 5,
     transfer_galleons: 10,
     transfer_item: 10,
     use_item: 5,
@@ -234,6 +236,12 @@ module CommandParser
           puts "[BUY] ERROR: player not found (@#{sender})"
           return
         end
+
+      when /\[판매\/(.+?)\]/
+        item_name = Regexp.last_match(1).to_s.strip
+        puts "[PARSER] 판매 명령 감지: #{item_name}"
+        cmd_key = :sell
+        message = SellCommand.new(sender, item_name, sheet_manager).execute
 
       when /\[양도\/갈레온\/(\d+)\/@(.+?)\]/i
         amount = Regexp.last_match(1).to_i
