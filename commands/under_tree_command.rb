@@ -101,15 +101,12 @@ class UnderTreeCommand
     if rand_value < 0.10  # 10% - 정식 오너먼트
       ornament = PROPER_ORNAMENTS.sample
       reward = rand(5..8)
-      type = "정식 오너먼트"
     elsif rand_value < 0.40  # 30% - 그럴듯한 장식품
       ornament = DECENT_ORNAMENTS.sample
       reward = rand(2..4)
-      type = "그럴듯한 장식"
     else  # 60% - 이상한 장식품
       ornament = WEIRD_ORNAMENTS.sample
       reward = rand(1..3)
-      type = "이상한 물건"
     end
 
     # 인벤토리에 추가
@@ -123,13 +120,12 @@ class UnderTreeCommand
     })
 
     message = "@#{@student_id} 트리 아래에서 장식품을 찾았어요!\n\n"
-    message += "#{ornament}\n"
-    message += "(#{type})\n\n"
+    message += "#{ornament}\n\n"
     message += "+#{reward}G\n"
     message += "현재 잔액: #{new_galleons}G\n"
     message += "주머니에 추가되었어요!"
     
-    puts "[UNDER_TREE] SUCCESS: #{ornament} (#{type})"
+    puts "[UNDER_TREE] SUCCESS: #{ornament}"
     return message
   end
 end
