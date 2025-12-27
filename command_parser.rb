@@ -14,14 +14,6 @@ require_relative 'commands/dice_command'
 require_relative 'commands/coin_command'
 require_relative 'commands/yn_command'
 
-# 크리스마스 명령어만
-require_relative 'commands/pickup_command'
-require_relative 'commands/gift_box_command'
-require_relative 'commands/marshmallow_command'
-require_relative 'commands/fireplace_command'
-require_relative 'commands/under_tree_command'
-require_relative 'commands/decorate_tree_command'
-
 # ============================================
 # command_parser.rb
 # 상점봇 명령어 파서 및 분기 처리 (TAROT 78장 완전판)
@@ -46,14 +38,6 @@ module CommandParser
     pouch: 5,
     tarot: 30,
     bet: 10,
-
-    # 크리스마스 명령어
-    pickup: 5,
-    gift_box: 5,
-    marshmallow: 5,
-    fireplace: 5,
-    under_tree: 5,
-    decorate_tree: 10,
 
     # 즉시실행
     dice: 0,
@@ -266,7 +250,9 @@ module CommandParser
       when /\[주머니\]/
         puts "[PARSER] 주머니 명령 감지"
         cmd_key = :pouch
-        message = PouchCommand.new(sender, sheet_manager).execute
+        # 주머니는 스레드 처리가 필요하므로 직접 실행
+        PouchCommand.new(sender, sheet_manager, mastodon_client, notification).execute
+        return
 
       when /\[타로\]/
         puts "[PARSER] 타로 명령 감지"
@@ -278,37 +264,6 @@ module CommandParser
         puts "[PARSER] 베팅 명령 감지: #{amount}G"
         cmd_key = :bet
         message = BetCommand.new(sender, amount, sheet_manager).execute
-
-      # ===== 크리스마스 명령어 (6개만) =====
-      when /\[양말\]/
-        puts "[PARSER] 양말 명령 감지"
-        cmd_key = :pickup
-        message = PickupCommand.new(sender, sheet_manager).execute
-
-      when /\[선물상자\]/
-        puts "[PARSER] 선물상자 명령 감지"
-        cmd_key = :gift_box
-        message = GiftBoxCommand.new(sender, sheet_manager).execute
-
-      when /\[마시멜로우\]/
-        puts "[PARSER] 마시멜로우 명령 감지"
-        cmd_key = :marshmallow
-        message = MarshmallowCommand.new(sender, sheet_manager).execute
-
-      when /\[난로\]/
-        puts "[PARSER] 난로 명령 감지"
-        cmd_key = :fireplace
-        message = FireplaceCommand.new(sender, sheet_manager).execute
-
-      when /\[트리\s*아래\]/
-        puts "[PARSER] 트리 아래 명령 감지"
-        cmd_key = :under_tree
-        message = UnderTreeCommand.new(sender, sheet_manager).execute
-
-      when /\[트리\s*장식\]/
-        puts "[PARSER] 트리장식 명령 감지"
-        cmd_key = :decorate_tree
-        message = DecorateTreeCommand.new(sender, sheet_manager).execute
 
       # ===== 기존 즉시실행 명령어 =====
       when /\[주사위|d\d+|\d+d\]/i
