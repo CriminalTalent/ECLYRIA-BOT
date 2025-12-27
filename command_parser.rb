@@ -13,6 +13,7 @@ require_relative 'commands/bet_command'
 require_relative 'commands/dice_command'
 require_relative 'commands/coin_command'
 require_relative 'commands/yn_command'
+require_relative 'commands/egg_ingredient_command'
 
 # ============================================
 # command_parser.rb
@@ -38,6 +39,7 @@ module CommandParser
     pouch: 5,
     tarot: 30,
     bet: 10,
+    egg_ingredient: 10,
 
     # 즉시실행
     dice: 0,
@@ -264,6 +266,11 @@ module CommandParser
         puts "[PARSER] 베팅 명령 감지: #{amount}G"
         cmd_key = :bet
         message = BetCommand.new(sender, amount, sheet_manager).execute
+
+      when /\[계란재료\]/
+        puts "[PARSER] 계란재료 명령 감지"
+        cmd_key = :egg_ingredient
+        message = EggIngredientCommand.new(sender, sheet_manager).execute
 
       # ===== 기존 즉시실행 명령어 =====
       when /\[주사위|d\d+|\d+d\]/i
